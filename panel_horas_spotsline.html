@@ -8,6 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{
     --bg: #14181d;
@@ -158,6 +159,48 @@
 
   footer{padding:20px 28px 40px; text-align:center; color:var(--muted); font-size:11.5px;}
 
+  /* ====== Premio cuatrimestral ====== */
+  .criterios-panel{background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:20px 22px; margin-bottom:16px;}
+  .criterios-panel h3{margin:16px 0 8px; font-size:12px; color:var(--muted); font-weight:650;}
+  .criterios-panel h3:first-child{margin-top:0;}
+  .criterios-panel p{margin:0 0 10px; font-size:12.5px; color:var(--text); line-height:1.55;}
+  .criterios-grid{display:grid; grid-template-columns:1fr 1fr; gap:28px;}
+  @media (max-width:900px){ .criterios-grid{grid-template-columns:1fr;} }
+  .criterios-table{width:100%; border-collapse:collapse; font-size:12.5px;}
+  .criterios-table td{padding:6px 4px; border-bottom:1px solid var(--line);}
+  .criterios-table td.peso{text-align:right; font-family:var(--mono); color:var(--text); font-weight:600; white-space:nowrap;}
+  .criterios-table td.peso.ok{color:var(--good);}
+  .criterio-semaforo{display:flex; align-items:center; gap:8px; font-size:12.5px; margin-bottom:8px;}
+  .dot{width:9px; height:9px; border-radius:50%; display:inline-block;}
+  .dot.verde{background:var(--good);}
+  .dot.amarillo{background:var(--amber);}
+  .dot.rojo{background:var(--danger);}
+  .kpi.clickable{cursor:pointer;}
+  .kpi.clickable.kpi-active{border-color:var(--text); box-shadow:0 0 0 1px var(--text) inset;}
+  .semaforo-pill{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; padding:3px 9px; border-radius:20px;}
+  .semaforo-pill.verde{background:var(--good-dim); color:var(--good);}
+  .semaforo-pill.amarillo{background:var(--amber-dim); color:var(--amber);}
+  .semaforo-pill.rojo{background:var(--danger-dim); color:var(--danger);}
+  .override-tag{font-size:10.5px; color:var(--teal); font-family:var(--mono); margin-left:6px;}
+  tr.premio-detail td{background:var(--panel-2); padding:16px 20px 20px;}
+  .premio-detail-grid{display:grid; grid-template-columns:1fr 320px; gap:20px;}
+  @media (max-width:900px){ .premio-detail-grid{grid-template-columns:1fr;} }
+  .ann-list{display:flex; flex-direction:column; gap:6px; margin-bottom:12px;}
+  .ann-item{display:flex; align-items:center; gap:10px; background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:7px 10px; font-size:12.5px; white-space:normal;}
+  .ann-item .peso{font-family:var(--mono); color:var(--muted); min-width:26px;}
+  .ann-item .tipo{flex:1;}
+  .ann-item .motivo{color:var(--muted); font-size:12px;}
+  .ann-form{display:grid; grid-template-columns:1fr 60px 1fr auto; gap:8px; align-items:center;}
+  .ann-form select, .ann-form input{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    border-radius:5px; padding:7px 9px; font-family:var(--sans); font-size:12.5px;
+  }
+  .override-card{background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:12px 14px;}
+  .override-card h4{margin:0 0 10px; font-size:12px; color:var(--muted); font-weight:650;}
+  .btn.danger{background:transparent; color:var(--danger); border:1px solid var(--danger); padding:5px 9px; font-size:12px; border-radius:5px; cursor:pointer;}
+  .btn.small{padding:5px 10px; font-size:12px; font-weight:600; border-radius:5px;}
+  .empty-hint{color:var(--muted); font-size:12px; padding:6px 0;}
+
   .filter-note{font-size:11.5px; color:var(--amber); font-family:var(--mono); margin:-4px 0 10px;}
   .period-filter{display:flex; align-items:flex-end; gap:10px; margin-bottom:14px; flex-wrap:wrap;}
   .period-filter .field{margin-bottom:0; min-width:140px;}
@@ -282,6 +325,7 @@
     <button class="tab-btn" data-tab="indicadores">Indicadores</button>
     <button class="tab-btn" data-tab="ausentismo">Ausentismo</button>
     <button class="tab-btn" data-tab="liquidacion">Liquidación</button>
+    <button class="tab-btn" data-tab="premio">Premio cuatrimestral</button>
   </div>
   <div style="display:flex; align-items:center; gap:10px;">
     <button class="btn secondary" id="btnActualizarLenox" disabled title="Desactivado temporalmente: no está funcionando bien.">🔄 Actualizar desde Lenox (desactivado)</button>
@@ -385,6 +429,81 @@
     <div class="filter-note" id="plantillaStatus" style="color:var(--muted)"></div>
     <div class="filter-note" id="filterNoteLiq"></div>
     <div class="table-wrap"><table id="tblLiquidacion"></table></div>
+  </section>
+
+  <section id="tab-premio" class="tabpanel" style="display:none">
+    <div class="panel-head">
+      <div>
+        <h2>Premio cuatrimestral por presentismo</h2>
+        <div class="note" id="premioSubNote">Solo personal Jornalizado. Detecta automáticamente ausencias, licencias, llegadas tarde y retiros anticipados del mismo dataset de Lenox.</div>
+      </div>
+      <div class="actions">
+        <div class="field" style="margin-bottom:0; min-width:110px;">
+          <label>Período</label>
+          <select id="premioPeriodSelect"></select>
+        </div>
+        <div class="field" style="margin-bottom:0; min-width:110px;">
+          <label>Monto base</label>
+          <input type="number" id="premioMontoBaseInput" step="1">
+        </div>
+        <button class="btn secondary" id="btnPremioCriterios">ℹ Criterios</button>
+        <button class="btn secondary" id="btnPremioExportPDF">Exportar a PDF</button>
+        <button class="btn" id="btnPremioExportExcel">Exportar a Excel</button>
+      </div>
+    </div>
+
+    <div class="kpis" id="premioKpis"></div>
+
+    <div class="criterios-panel" id="premioCriteriosPanel" style="display:none;">
+      <h2 style="margin:0 0 14px; font-size:15px; font-weight:650;">Cómo se calcula el semáforo</h2>
+      <div class="criterios-grid">
+        <div class="criterio-col">
+          <h3>Alcance</h3>
+          <p>Solo se evalúa al <b>personal Jornalizado</b>. El personal Mensual de jefatura/administración (Buceta, Capasso, Buitrago, etc.) no corresponde y no aparece en la tabla.</p>
+          <h3>Puntaje por anotación</h3>
+          <p>Cada incidencia real suma <b>1 punto</b>, sin importar el tipo.</p>
+          <table class="criterios-table">
+            <tr><td>Ausencia justificada</td><td class="peso">1 pt</td></tr>
+            <tr><td>Ausencia injustificada</td><td class="peso">1 pt</td></tr>
+            <tr><td>Licencia médica</td><td class="peso">1 pt</td></tr>
+            <tr><td>Día por ART</td><td class="peso">1 pt</td></tr>
+            <tr><td>Llegada tarde</td><td class="peso">1 pt</td></tr>
+            <tr><td>Salida anticipada</td><td class="peso">1 pt</td></tr>
+            <tr><td>Retiro anticipado</td><td class="peso">1 pt</td></tr>
+            <tr><td>Paro (huelga)</td><td class="peso ok">0 pts — no penaliza</td></tr>
+            <tr><td>Licencia gremial / actividad sindical</td><td class="peso ok">0 pts — no penaliza</td></tr>
+            <tr><td>Vacaciones</td><td class="peso ok">0 pts — no penaliza</td></tr>
+          </table>
+        </div>
+        <div class="criterio-col">
+          <h3>Semáforo según el total de puntos</h3>
+          <div class="criterio-semaforo"><span class="dot verde"></span><b>Verde</b> — 0 puntos. Cobra sin análisis.</div>
+          <div class="criterio-semaforo"><span class="dot amarillo"></span><b>Amarillo</b> — 1 a 2 puntos. Cobra, pero queda marcado para revisión.</div>
+          <div class="criterio-semaforo"><span class="dot rojo"></span><b>Rojo</b> — 3 puntos o más. No cobra, salvo excepción manual.</div>
+          <h3>De dónde salen las anotaciones</h3>
+          <p><b>📡 Automáticas:</b> se calculan solas a partir del mismo dataset de Ausentismo de este panel (para el período elegido), usando los códigos A, L, RA, LT. Feriado, vacaciones y gremial/sindical (AG, AGI) quedan siempre afuera.</p>
+          <p><b>Manuales:</b> lo que Lenox no puede saber (ej. distinguir ART de una licencia común) se carga a mano en el detalle de cada persona.</p>
+          <p><b>Excluir:</b> cualquier anotación automática se puede marcar "Excluir" si correspondía a un paro, un permiso autorizado, o un error de fichada.</p>
+          <p><b>Forzar estado:</b> siempre se puede pisar la sugerencia a mano (estado + % del monto + motivo).</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:20px;"></th>
+            <th>Nombre</th>
+            <th>Sector</th>
+            <th class="num">Puntos</th>
+            <th>Semáforo</th>
+            <th class="num">Monto</th>
+          </tr>
+        </thead>
+        <tbody id="premioTbody"></tbody>
+      </table>
+    </div>
   </section>
 
   <div class="assumptions">
@@ -1885,6 +2004,421 @@ function iniciarAutoRefresh(){
   }, 20000); // cada 20 segundos
 }
 
+// ====== Premio cuatrimestral por presentismo ======
+const PREMIO_ROSTER = [{"id":"AGUILAR_GUSTAVO_NICOLAS_EZEQUIEL","legajo":104,"nombre":"AGUILAR GUSTAVO NICOLAS EZEQUIEL","sector":"ARMADO","categoria":"Operario Esp Multiple","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"AGUILAR_VASQUEZ_BRYAN_JEANPIERRE","legajo":237,"nombre":"AGUILAR VASQUEZ BRYAN JEANPIERRE","sector":"FABRICACION","categoria":"OPERARIO CALIFICADO","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"AYALA_JOSE_RAMON","legajo":62,"nombre":"AYALA JOSE RAMON","sector":"FABRICACION","categoria":"Oficial Multiple","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"AZCONA_ALDO_DANIEL","legajo":229,"nombre":"AZCONA ALDO DANIEL","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BACCHETTA_LAUREANO","legajo":134,"nombre":"BACCHETTA LAUREANO","sector":"PINTURA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BARRIOS_DAIANA","legajo":128,"nombre":"BARRIOS DAIANA","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BARRIOS_JONATAN","legajo":167,"nombre":"BARRIOS JONATAN","sector":"EXPEDICION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BARRIOS_MATIAS_GABRIEL","legajo":106,"nombre":"BARRIOS MATIAS GABRIEL","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BRITOS_MARCELO","legajo":39,"nombre":"BRITOS MARCELO","sector":"MANTENIMIENTO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BUCETA_CARLA","legajo":null,"nombre":"BUCETA CARLA","sector":"JEFATURA","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"BUCETA_FEDERICO","legajo":null,"nombre":"BUCETA FEDERICO","sector":"ADMINISTRACION","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"BUCETA_GERMAN_ALBERTO","legajo":null,"nombre":"BUCETA GERMAN ALBERTO","sector":"VENDEDOR","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"BUCETA_SAMANTA","legajo":null,"nombre":"BUCETA SAMANTA","sector":"JEFATURA","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"BUITRAGO_GUSTAVO_EZEQUIEL","legajo":null,"nombre":"BUITRAGO GUSTAVO EZEQUIEL","sector":"DEPOSITO","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"CAPASSO_RICARDO","legajo":null,"nombre":"CAPASSO RICARDO","sector":"MANTENIMIENO Y MATRICERIA","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"DIAZ_CAROLINA_VANESA","legajo":261,"nombre":"DIAZ CAROLINA VANESA","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"DIAZ_MAURO_EZEQUIEL","legajo":212,"nombre":"DIAZ MAURO EZEQUIEL","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"FARINA_FEDERICO","legajo":256,"nombre":"FARIÑA FEDERICO","sector":"PINTURA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"FERNANDEZ_BRENDA_JACQUELINE","legajo":280,"nombre":"FERNANDEZ BRENDA JACQUELINE","sector":"RECEPCION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"FERREYRA_SANTIAGO_NICOLAS","legajo":159,"nombre":"FERREYRA SANTIAGO NICOLAS","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"GALARRAGA_DAIANA_MAGALI","legajo":130,"nombre":"GALARRAGA DAIANA MAGALI","sector":"EXPEDICION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"GOMEZ_NESTOR_ALBERTO","legajo":176,"nombre":"GOMEZ NESTOR ALBERTO","sector":"CHOFER","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"GONZALEZ_MANUEL_LAUTARO_NAHUEL","legajo":279,"nombre":"GONZALEZ MANUEL LAUTARO NAHUEL","sector":"CONTAC CENTER","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"KAPPELER_JOSE","legajo":57,"nombre":"KAPPELER JOSE","sector":"MATRICERIA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"LAMBARE_NOELIA_ROCIO","legajo":183,"nombre":"LAMBARE NOELIA ROCIO","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"LEIVA_TATIANA_LOURDES","legajo":220,"nombre":"LEIVA TATIANA LOURDES","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"LICK_DIEGO_JACOBO","legajo":186,"nombre":"LICK DIEGO JACOBO","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"LO_RUSSO_MARCOS_EMILIO","legajo":263,"nombre":"LO RUSSO MARCOS EMILIO","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"MEDINA_GABRIEL_IVAN","legajo":222,"nombre":"MEDINA GABRIEL IVAN","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"MUNOZ_JUAN_MANUEL","legajo":142,"nombre":"MUÑOZ JUAN MANUEL","sector":"PINTURA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"NOGUERA_PEDRO_SEBASTIAN","legajo":242,"nombre":"NOGUERA PEDRO SEBASTIAN","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"RAMIREZ_MAURO_EZEQUIEL","legajo":206,"nombre":"RAMIREZ MAURO EZEQUIEL","sector":"CHOFER","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"RAMOS_BRANDON_DAMIAN","legajo":270,"nombre":"RAMOS BRANDON DAMIAN","sector":"PINTURA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"RIOS_JORGE","legajo":146,"nombre":"RIOS JORGE","sector":"MATRICERIA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"RUIZ_DARIO_ANDRES","legajo":149,"nombre":"RUIZ DARIO ANDRES","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"SANDOVAL_MIGUEL_ANGEL","legajo":166,"nombre":"SANDOVAL MIGUEL ANGEL","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"SCOLA_ALBERTO_SEBASTIAN","legajo":33,"nombre":"SCOLA ALBERTO SEBASTIAN","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"TORRES_PABLO","legajo":5,"nombre":"TORRES PABLO","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"YELLI_MATIAS_GUILLERMO","legajo":264,"nombre":"YELLI MATIAS GUILLERMO","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"ZELARAYAN_JOSE_FACUNDO","legajo":190,"nombre":"ZELARAYAN JOSE FACUNDO","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"ZUNIGA_BRENDA_VANINA","legajo":203,"nombre":"ZUÑIGA BRENDA VANINA","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"}];
+
+const PREMIO_TIPOS = {
+  ausencia_justificada:   { label: 'Ausencia justificada',   peso: 1 },
+  ausencia_injustificada: { label: 'Ausencia injustificada', peso: 1 },
+  licencia_medica:        { label: 'Licencia médica',        peso: 1 },
+  art:                    { label: 'Día por ART',             peso: 1 },
+  llegada_tarde:          { label: 'Llegada tarde',           peso: 1 },
+  salida_anticipada:      { label: 'Salida anticipada',       peso: 1 },
+  retiro_anticipado:      { label: 'Retiro anticipado',       peso: 1 },
+  paro:                   { label: 'Paro (no penaliza)',      peso: 0 },
+  licencia_gremial:       { label: 'Licencia gremial (no penaliza)', peso: 0 },
+};
+const PREMIO_CODE_TO_TIPO = { A: 'ausencia_injustificada', L: 'licencia_medica', RA: 'retiro_anticipado', LT: 'llegada_tarde' };
+const PREMIO_PERIODOS = [
+  { id: '2026-05_08', label: 'Mayo – Agosto 2026' },
+  { id: '2026-01_04', label: 'Enero – Abril 2026' },
+  { id: '2026-09_12', label: 'Septiembre – Diciembre 2026' },
+];
+const PREMIO_PERIOD_RANGES = {
+  '2026-01_04': [new Date(2026,0,1), new Date(2026,3,30,23,59,59)],
+  '2026-05_08': [new Date(2026,4,1), new Date(2026,7,31,23,59,59)],
+  '2026-09_12': [new Date(2026,8,1), new Date(2026,11,31,23,59,59)],
+};
+const PREMIO_DEFAULT_MONTO = 222080;
+
+let premioPeriodo = PREMIO_PERIODOS[0].id;
+let PREMIO_STATE = { montoBase: PREMIO_DEFAULT_MONTO, employees: {} };
+let PREMIO_AUTO = {}; // { empId: [ {key,date,tipo,obs} ] }
+let premioOpenRowId = null;
+let premioFiltroSemaforo = null;
+
+function premioMatchAusentismo(nombreRoster, employees){
+  const rn = normTokens(nombreRoster);
+  let best=null, bestScore=0;
+  for(const e of employees){
+    const en = normTokens(e.nombre);
+    let score=0;
+    for(const t of rn) if(en.has(t)) score++;
+    if(score>bestScore){bestScore=score; best=e;}
+  }
+  return bestScore>=2 ? best : null;
+}
+
+function premioComputeAuto(periodoId){
+  PREMIO_AUTO = {};
+  const range = PREMIO_PERIOD_RANGES[periodoId];
+  if(!range || !DATASET) return;
+  const [desde, hasta] = range;
+  PREMIO_ROSTER.forEach(emp=>{
+    const match = premioMatchAusentismo(emp.nombre, DATASET);
+    const items = [];
+    if(match){
+      match.dias.forEach(dia=>{
+        const f = parseDateDMY(dia.date);
+        if(f < desde || f > hasta) return;
+        const code = classifyAusentismoCode(dia, match.sector);
+        const tipo = PREMIO_CODE_TO_TIPO[code];
+        if(tipo) items.push({ key: emp.id+'_'+dia.date+'_'+code, date: dia.date, tipo, obs: dia.obs });
+      });
+    }
+    PREMIO_AUTO[emp.id] = items;
+  });
+}
+
+function premioRosterElegible(){ return PREMIO_ROSTER.filter(e=>e.tipo==='Jornalizado'); }
+
+function premioEmptyEmp(){ return { manual: [], excluidos: [], override: { estado: null, pct: null, motivo: '' } }; }
+
+async function premioLoadPeriodo(periodoId){
+  const stored = await leerFilaSupabase('premio_'+periodoId);
+  if(stored){
+    PREMIO_STATE = stored;
+    if(!PREMIO_STATE.montoBase) PREMIO_STATE.montoBase = PREMIO_DEFAULT_MONTO;
+    if(!PREMIO_STATE.employees) PREMIO_STATE.employees = {};
+  } else {
+    PREMIO_STATE = { montoBase: PREMIO_DEFAULT_MONTO, employees: {} };
+  }
+  PREMIO_ROSTER.forEach(emp=>{
+    if(!PREMIO_STATE.employees[emp.id]) PREMIO_STATE.employees[emp.id] = premioEmptyEmp();
+    if(!PREMIO_STATE.employees[emp.id].manual) PREMIO_STATE.employees[emp.id].manual = [];
+    if(!PREMIO_STATE.employees[emp.id].excluidos) PREMIO_STATE.employees[emp.id].excluidos = [];
+  });
+  premioComputeAuto(periodoId);
+}
+async function premioSave(){ await guardarFilaSupabase('premio_'+premioPeriodo, PREMIO_STATE); }
+function premioGetEmp(id){
+  if(!PREMIO_STATE.employees[id]) PREMIO_STATE.employees[id] = premioEmptyEmp();
+  return PREMIO_STATE.employees[id];
+}
+function premioEfectivas(empId){
+  const st = premioGetEmp(empId);
+  const auto = (PREMIO_AUTO[empId]||[])
+    .filter(item => !st.excluidos.includes(item.key))
+    .map(item => ({ id: item.key, tipo: item.tipo, cantidad: 1, motivo: item.date + (item.obs?(' — '+item.obs):''), auto:true }));
+  return [...auto, ...st.manual];
+}
+function premioPuntos(empId){
+  return premioEfectivas(empId).reduce((s,a)=> s + (PREMIO_TIPOS[a.tipo]?.peso||0) * (a.cantidad||1), 0);
+}
+function premioSugerido(pts){ return pts===0 ? 'verde' : (pts<=2 ? 'amarillo' : 'rojo'); }
+function premioEstado(empId){
+  const st = premioGetEmp(empId);
+  return st.override.estado || premioSugerido(premioPuntos(empId));
+}
+function premioMonto(empId){
+  const st = premioGetEmp(empId);
+  if(st.override.pct !== null && st.override.pct !== undefined && st.override.pct !== ''){
+    return Math.round(PREMIO_STATE.montoBase * (Number(st.override.pct)/100));
+  }
+  return premioEstado(empId)==='rojo' ? 0 : PREMIO_STATE.montoBase;
+}
+function premioResumenMotivo(empId){
+  const anns = premioEfectivas(empId);
+  if(!anns.length) return '';
+  const conteo = {};
+  anns.forEach(a=>{ conteo[a.tipo] = (conteo[a.tipo]||0) + (a.cantidad||1); });
+  return Object.entries(conteo).map(([tipo,cant])=> `${cant}x ${PREMIO_TIPOS[tipo].label}`).join(', ');
+}
+function premioFmtMoney(n){ return '$' + Math.round(n).toLocaleString('es-AR'); }
+function premioEsc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+function premioRenderKPIs(){
+  const cont = document.getElementById('premioKpis');
+  const elegibles = premioRosterElegible();
+  let verde=0, amarillo=0, rojo=0, monto=0;
+  elegibles.forEach(emp=>{
+    const est = premioEstado(emp.id);
+    if(est==='verde') verde++; else if(est==='amarillo') amarillo++; else rojo++;
+    monto += premioMonto(emp.id);
+  });
+  const act = v => premioFiltroSemaforo===v ? ' kpi-active' : '';
+  cont.innerHTML = `
+    <div class="kpi clickable${act(null)}" data-filtro=""><div class="label">Personal evaluado</div><div class="value">${elegibles.length}</div></div>
+    <div class="kpi clickable${act('verde')}" data-filtro="verde"><div class="label">🟢 Verde</div><div class="value" style="color:var(--good)">${verde}</div></div>
+    <div class="kpi clickable${act('amarillo')}" data-filtro="amarillo"><div class="label">🟡 Amarillo</div><div class="value" style="color:var(--amber)">${amarillo}</div></div>
+    <div class="kpi clickable${act('rojo')}" data-filtro="rojo"><div class="label">🔴 Rojo</div><div class="value" style="color:var(--danger)">${rojo}</div></div>
+    <div class="kpi"><div class="label">Monto total a pagar</div><div class="value">${premioFmtMoney(monto)}</div></div>
+  `;
+  cont.querySelectorAll('.kpi.clickable').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const v = el.getAttribute('data-filtro');
+      premioFiltroSemaforo = v==='' ? null : (premioFiltroSemaforo===v ? null : v);
+      premioOpenRowId = null;
+      premioRenderKPIs(); premioRenderTable();
+    });
+  });
+}
+
+function premioAnnItemHtml(empId, ann, isAuto){
+  const t = PREMIO_TIPOS[ann.tipo];
+  const actionBtn = isAuto
+    ? `<button class="btn danger" data-premio-action="excluir" data-emp="${empId}" data-key="${ann.id}">Excluir</button>`
+    : `<button class="btn danger" data-premio-action="del" data-emp="${empId}" data-ann="${ann.id}">✕</button>`;
+  return `<div class="ann-item"><span class="peso">${t.peso}pt</span><span class="tipo">${isAuto?'📡 ':''}${t.label}</span><span class="motivo">${ann.motivo?premioEsc(ann.motivo):''}</span>${actionBtn}</div>`;
+}
+
+function premioDetailHtml(emp){
+  const st = premioGetEmp(emp.id);
+  const puntos = premioPuntos(emp.id);
+  const sug = premioSugerido(puntos);
+  const est = premioEstado(emp.id);
+  const autoAll = PREMIO_AUTO[emp.id]||[];
+  const autoActivos = autoAll.filter(a=>!st.excluidos.includes(a.key));
+  const autoExcluidos = autoAll.filter(a=>st.excluidos.includes(a.key));
+  const optionsTipo = Object.entries(PREMIO_TIPOS).map(([k,v])=>`<option value="${k}">${v.label} (${v.peso}pt)</option>`).join('');
+  const optionsEstado = ['','verde','amarillo','rojo'].map(v=>{
+    const lbl = v===''?'Automático (según puntos)':v.charAt(0).toUpperCase()+v.slice(1);
+    const sel = (st.override.estado||'')===v ? 'selected':'';
+    return `<option value="${v}" ${sel}>${lbl}</option>`;
+  }).join('');
+  return `
+    <tr class="premio-detail" data-detail-for="${emp.id}"><td colspan="6">
+      <div class="premio-detail-grid">
+        <div>
+          ${!DATASET ? '<div class="empty-hint">⚠ No hay dataset de Ausentismo cargado todavía.</div>' : ''}
+          <h4 style="font-size:11.5px; color:var(--muted); margin:0 0 6px;">DETECTADO AUTOMÁTICAMENTE (LENOX)</h4>
+          <div class="ann-list">${autoActivos.length ? autoActivos.map(a=>premioAnnItemHtml(emp.id,{id:a.key,tipo:a.tipo,motivo:a.date+(a.obs?(' — '+a.obs):'')},true)).join('') : '<div class="empty-hint">Sin incidentes detectados para este período.</div>'}</div>
+          ${autoExcluidos.length ? `
+            <h4 style="font-size:11.5px; color:var(--muted); margin:10px 0 6px;">EXCLUIDOS</h4>
+            <div class="ann-list">${autoExcluidos.map(a=>`
+              <div class="ann-item" style="opacity:.6;">
+                <span class="peso">${PREMIO_TIPOS[a.tipo].peso}pt</span>
+                <span class="tipo">📡 ${PREMIO_TIPOS[a.tipo].label}</span>
+                <span class="motivo">${premioEsc(a.date+(a.obs?(' — '+a.obs):''))}</span>
+                <button class="btn secondary small" data-premio-action="reincluir" data-emp="${emp.id}" data-key="${a.key}">Reincluir</button>
+              </div>`).join('')}</div>` : ''}
+          <h4 style="font-size:11.5px; color:var(--muted); margin:14px 0 6px;">AGREGADAS A MANO</h4>
+          <div class="ann-list">${st.manual.length ? st.manual.map(a=>premioAnnItemHtml(emp.id,a,false)).join('') : '<div class="empty-hint">Ninguna.</div>'}</div>
+          <div class="ann-form">
+            <select id="premio-tipo-${emp.id}">${optionsTipo}</select>
+            <input type="number" id="premio-cant-${emp.id}" value="1" min="1">
+            <input type="text" id="premio-motivo-${emp.id}" placeholder="Motivo / fecha (opcional)">
+            <button class="btn small" data-premio-action="add" data-emp="${emp.id}">+ Agregar</button>
+          </div>
+        </div>
+        <div class="override-card">
+          <h4>ESTADO FINAL</h4>
+          <div class="field"><label>Puntos → sugerencia</label><div class="semaforo-pill ${sug}"><span class="dot ${sug}"></span>${puntos} pts → ${sug.toUpperCase()}</div></div>
+          <div class="field"><label>Forzar estado</label><select id="premio-override-estado-${emp.id}">${optionsEstado}</select></div>
+          <div class="field"><label>% del monto (vacío = automático)</label><input type="number" id="premio-override-pct-${emp.id}" placeholder="ej: 50" value="${st.override.pct ?? ''}"></div>
+          <div class="field"><label>Motivo de la excepción</label><input type="text" id="premio-override-motivo-${emp.id}" value="${st.override.motivo?premioEsc(st.override.motivo):''}"></div>
+          <button class="btn small" data-premio-action="save-override" data-emp="${emp.id}">Guardar excepción</button>
+        </div>
+      </div>
+    </td></tr>`;
+}
+
+function premioRenderTable(){
+  const tbody = document.getElementById('premioTbody');
+  const orden = { verde:0, amarillo:1, rojo:2 };
+  let lista = premioRosterElegible().map(emp=>({emp, est: premioEstado(emp.id)}));
+  if(premioFiltroSemaforo) lista = lista.filter(x=>x.est===premioFiltroSemaforo);
+  lista.sort((a,b)=> (orden[a.est]-orden[b.est]) || a.emp.nombre.localeCompare(b.emp.nombre));
+  let html = '';
+  lista.forEach(({emp, est})=>{
+    const st = premioGetEmp(emp.id);
+    const puntos = premioPuntos(emp.id);
+    const isOverride = !!st.override.estado || (st.override.pct!==null && st.override.pct!==undefined && st.override.pct!=='');
+    const monto = premioMonto(emp.id);
+    const open = premioOpenRowId===emp.id;
+    html += `<tr class="premio-row" data-emp="${emp.id}" style="cursor:pointer;">
+      <td>${open?'▾':'▸'}</td>
+      <td class="name">${premioEsc(emp.nombre)}<div style="font-family:var(--mono); color:var(--muted); font-size:11px;">${emp.legajo?'Legajo '+emp.legajo:'sin legajo'}</div></td>
+      <td>${premioEsc(emp.sector)}</td>
+      <td class="num">${puntos}</td>
+      <td><span class="semaforo-pill ${est}"><span class="dot ${est}"></span>${est.charAt(0).toUpperCase()+est.slice(1)}</span>${isOverride?'<span class="override-tag">manual</span>':''}</td>
+      <td class="num">${premioFmtMoney(monto)}</td>
+    </tr>`;
+    if(open) html += premioDetailHtml(emp);
+  });
+  if(!lista.length) html = `<tr><td colspan="6" class="empty-hint" style="padding:16px;">Nadie coincide con el filtro seleccionado.</td></tr>`;
+  tbody.innerHTML = html;
+  premioAttachHandlers();
+}
+
+function premioAttachHandlers(){
+  document.querySelectorAll('.premio-row').forEach(tr=>{
+    tr.addEventListener('click', ()=>{
+      const id = tr.getAttribute('data-emp');
+      premioOpenRowId = premioOpenRowId===id ? null : id;
+      premioRenderTable();
+    });
+  });
+  document.querySelectorAll('[data-premio-action="add"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const empId = btn.getAttribute('data-emp');
+      const tipo = document.getElementById('premio-tipo-'+empId).value;
+      const cantidad = Math.max(1, parseInt(document.getElementById('premio-cant-'+empId).value||'1',10));
+      const motivo = document.getElementById('premio-motivo-'+empId).value.trim();
+      premioGetEmp(empId).manual.push({ id:'a'+Math.random().toString(36).slice(2,9), tipo, cantidad, motivo });
+      await premioSave(); premioRenderTable(); premioRenderKPIs();
+    });
+  });
+  document.querySelectorAll('[data-premio-action="del"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const empId = btn.getAttribute('data-emp'), annId = btn.getAttribute('data-ann');
+      const st = premioGetEmp(empId);
+      st.manual = st.manual.filter(a=>a.id!==annId);
+      await premioSave(); premioRenderTable(); premioRenderKPIs();
+    });
+  });
+  document.querySelectorAll('[data-premio-action="excluir"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const empId = btn.getAttribute('data-emp'), key = btn.getAttribute('data-key');
+      const st = premioGetEmp(empId);
+      if(!st.excluidos.includes(key)) st.excluidos.push(key);
+      await premioSave(); premioRenderTable(); premioRenderKPIs();
+    });
+  });
+  document.querySelectorAll('[data-premio-action="reincluir"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const empId = btn.getAttribute('data-emp'), key = btn.getAttribute('data-key');
+      const st = premioGetEmp(empId);
+      st.excluidos = st.excluidos.filter(k=>k!==key);
+      await premioSave(); premioRenderTable(); premioRenderKPIs();
+    });
+  });
+  document.querySelectorAll('[data-premio-action="save-override"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const empId = btn.getAttribute('data-emp');
+      const st = premioGetEmp(empId);
+      const estadoVal = document.getElementById('premio-override-estado-'+empId).value;
+      const pctRaw = document.getElementById('premio-override-pct-'+empId).value;
+      const motivoVal = document.getElementById('premio-override-motivo-'+empId).value.trim();
+      st.override.estado = estadoVal || null;
+      st.override.pct = pctRaw==='' ? null : Number(pctRaw);
+      st.override.motivo = motivoVal;
+      await premioSave(); premioRenderTable(); premioRenderKPIs();
+    });
+  });
+}
+
+function premioRenderHeader(){
+  const per = PREMIO_PERIODOS.find(p=>p.id===premioPeriodo);
+  const elegibles = premioRosterElegible().length;
+  const excluidos = PREMIO_ROSTER.length - elegibles;
+  let sub = `Solo personal Jornalizado · ${per.label}`;
+  if(!DATASET) sub += ' · ⚠ No hay dataset de Ausentismo cargado.';
+  if(excluidos>0) sub += ` · ${excluidos} persona(s) Mensual/jefatura quedan fuera.`;
+  document.getElementById('premioSubNote').textContent = sub;
+  document.getElementById('premioMontoBaseInput').value = PREMIO_STATE.montoBase;
+  const sel = document.getElementById('premioPeriodSelect');
+  sel.innerHTML = PREMIO_PERIODOS.map(p=>`<option value="${p.id}" ${p.id===premioPeriodo?'selected':''}>${p.label}</option>`).join('');
+}
+
+async function premioRenderAll(){
+  premioRenderHeader();
+  premioRenderKPIs();
+  premioRenderTable();
+}
+
+async function initPremio(){
+  await premioLoadPeriodo(premioPeriodo);
+  await premioRenderAll();
+
+  document.getElementById('premioPeriodSelect').addEventListener('change', async (e)=>{
+    premioPeriodo = e.target.value;
+    premioOpenRowId = null;
+    await premioLoadPeriodo(premioPeriodo);
+    await premioRenderAll();
+  });
+  document.getElementById('premioMontoBaseInput').addEventListener('change', async (e)=>{
+    const v = Number(e.target.value);
+    if(!isNaN(v) && v>0){ PREMIO_STATE.montoBase = v; await premioSave(); await premioRenderAll(); }
+  });
+  document.getElementById('btnPremioCriterios').addEventListener('click', ()=>{
+    const panel = document.getElementById('premioCriteriosPanel');
+    const btn = document.getElementById('btnPremioCriterios');
+    const abierto = panel.style.display !== 'none';
+    panel.style.display = abierto ? 'none' : 'block';
+    btn.textContent = abierto ? 'ℹ Criterios' : '✕ Ocultar';
+  });
+  document.getElementById('btnPremioExportExcel').addEventListener('click', premioExportExcel);
+  document.getElementById('btnPremioExportPDF').addEventListener('click', premioExportPDF);
+}
+
+function premioOrdenados(){
+  const orden = { verde:0, amarillo:1, rojo:2 };
+  return premioRosterElegible()
+    .map(emp=>({emp, est: premioEstado(emp.id)}))
+    .sort((a,b)=> (orden[a.est]-orden[b.est]) || a.emp.nombre.localeCompare(b.emp.nombre));
+}
+
+function premioExportExcel(){
+  const wb = XLSX.utils.book_new();
+  const ordenado = premioOrdenados();
+  const per = PREMIO_PERIODOS.find(p=>p.id===premioPeriodo);
+  const rows = [
+    ['REPORTE PREMIO CUATRIMESTRAL POR PRESENTISMO — SPOTSLINE'],
+    ['Período', per.label],
+    ['Monto base', PREMIO_STATE.montoBase],
+    ['Alcance', 'Solo personal Jornalizado'],
+    [],
+    ['NOMBRE','LEGAJO','SECTOR','PUNTOS','ESTADO','COMENTARIO','MONTO'],
+  ];
+  let verde=0, amarillo=0, rojo=0, montoTotal=0, grupoActual=null;
+  const ETQ = { verde:'🟢 VERDE — cobran sin observaciones', amarillo:'🟡 AMARILLO — cobran, con comentarios', rojo:'🔴 ROJO — no cobran' };
+  ordenado.forEach(({emp, est})=>{
+    if(est!==grupoActual){ grupoActual=est; rows.push([ETQ[est]]); }
+    const puntos = premioPuntos(emp.id);
+    const monto = premioMonto(emp.id);
+    rows.push([emp.nombre, emp.legajo||'', emp.sector, puntos, est.toUpperCase(), premioResumenMotivo(emp.id), monto]);
+    if(est==='verde') verde++; else if(est==='amarillo') amarillo++; else rojo++;
+    montoTotal += monto;
+  });
+  rows.push([]); rows.push(['','','','','','TOTAL A PAGAR', montoTotal]);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Reporte Premio');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['Indicador','Resultado'],['Total evaluado', ordenado.length],
+    ['Verde', verde], ['Amarillo', amarillo], ['Rojo', rojo], ['Monto total a pagar', montoTotal],
+  ]), 'Resumen');
+  XLSX.writeFile(wb, `Premio_Cuatrimestral_${premioPeriodo}.xlsx`);
+}
+
+function premioExportPDF(){
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+  const per = PREMIO_PERIODOS.find(p=>p.id===premioPeriodo);
+  const ordenado = premioOrdenados();
+  const COLOR = { verde:[76,175,125], amarillo:[224,195,65], rojo:[226,87,76] };
+  const body = ordenado.map(({emp, est})=>({
+    est, row: [emp.nombre, emp.legajo||'—', emp.sector, premioPuntos(emp.id), est.toUpperCase(), premioResumenMotivo(emp.id), premioFmtMoney(premioMonto(emp.id))]
+  }));
+  const montoTotal = ordenado.reduce((s,{emp})=>s+premioMonto(emp.id),0);
+  pdf.setFontSize(16); pdf.text('Premio Cuatrimestral por Presentismo — Spotsline', 14, 16);
+  pdf.setFontSize(10);
+  pdf.text(`Período: ${per.label}   ·   Monto base: ${premioFmtMoney(PREMIO_STATE.montoBase)}   ·   Solo personal Jornalizado   ·   Generado: ${new Date().toLocaleDateString('es-AR')}`, 14, 23);
+  pdf.autoTable({
+    startY: 30,
+    head: [['Nombre','Legajo','Sector','Puntos','Estado','Comentario','Monto']],
+    body: body.map(b=>b.row),
+    foot: [['','','','','','TOTAL A PAGAR', premioFmtMoney(montoTotal)]],
+    styles: { fontSize:8, cellPadding:2 },
+    headStyles: { fillColor:[30,33,40] },
+    footStyles: { fillColor:[30,33,40], fontStyle:'bold' },
+    columnStyles: { 5:{cellWidth:90} },
+    margin: { left:14, right:14 },
+    didParseCell: (data)=>{
+      if(data.section==='body' && data.column.index===4){
+        const est = body[data.row.index].est;
+        data.cell.styles.textColor = COLOR[est];
+        data.cell.styles.fontStyle = 'bold';
+      }
+    },
+  });
+  pdf.save(`Premio_Cuatrimestral_${premioPeriodo}.pdf`);
+}
+
 // ====== init ======
 async function init(){
   const stored = await loadDataset();
@@ -1898,7 +2432,7 @@ async function init(){
   }
 
   recomputeAndRender();
-
+  await initPremio();
   document.getElementById('periodLabel').textContent = 'Período base: Junio 2026 completo (se extiende con las novedades diarias)';
   document.getElementById('updatedLabel').textContent = 'Fuente: reporte Lenox + carga manual';
 
