@@ -200,6 +200,9 @@
   .btn.danger{background:transparent; color:var(--danger); border:1px solid var(--danger); padding:5px 9px; font-size:12px; border-radius:5px; cursor:pointer;}
   .btn.small{padding:5px 10px; font-size:12px; font-weight:600; border-radius:5px;}
   .empty-hint{color:var(--muted); font-size:12px; padding:6px 0;}
+  .premio-sortable{cursor:pointer; user-select:none;}
+  .premio-sortable:hover{color:var(--text);}
+  .sort-arrow{font-size:10px; color:var(--muted);}
 
   /* ====== Recibos de premio (impresión) ====== */
   #reciboPrintArea{display:none;}
@@ -480,8 +483,12 @@
         <button class="btn secondary" id="btnPremioRecibos">🖨 Recibos</button>
         <button class="btn secondary" id="btnPremioExportPDF">Exportar a PDF</button>
         <button class="btn" id="btnPremioExportExcel">Exportar a Excel</button>
+        <button class="btn" id="btnPremioCerrar" style="background:var(--danger);">🔒 Cerrar y fijar (ya pagado)</button>
+        <button class="btn secondary" id="btnPremioReabrir" style="display:none;">🔓 Reabrir período</button>
       </div>
     </div>
+
+    <div class="filter-note" id="premioCerradoBanner" style="display:none; background:var(--good-dim); color:var(--good); padding:8px 12px; border-radius:6px; margin-bottom:12px; font-weight:600;"></div>
 
     <div class="kpis" id="premioKpis"></div>
 
@@ -525,11 +532,11 @@
         <thead>
           <tr>
             <th style="width:20px;"></th>
-            <th>Nombre</th>
-            <th>Sector</th>
-            <th class="num">Puntos</th>
-            <th>Semáforo</th>
-            <th class="num">Monto</th>
+            <th class="premio-sortable" data-sort="nombre">Nombre <span class="sort-arrow" id="arrow-nombre"></span></th>
+            <th class="premio-sortable" data-sort="sector">Sector <span class="sort-arrow" id="arrow-sector"></span></th>
+            <th class="num premio-sortable" data-sort="puntos">Puntos <span class="sort-arrow" id="arrow-puntos"></span></th>
+            <th class="premio-sortable" data-sort="semaforo">Semáforo <span class="sort-arrow" id="arrow-semaforo"></span></th>
+            <th class="num premio-sortable" data-sort="monto">Monto <span class="sort-arrow" id="arrow-monto"></span></th>
           </tr>
         </thead>
         <tbody id="premioTbody"></tbody>
@@ -781,6 +788,7 @@ function duracionHuecoGremial(obs){
   }
   return total;
 }
+const RA_FECHA_CORTE = new Date(2026, 8, 1); // 1/9/2026: desde acá rige la detección nueva por texto
 function classifyAusentismoCode(dia, sector){
   const cat = classifyDia(dia.obs, sector);
   if(cat==='FERIADO') return 'F';
@@ -789,15 +797,22 @@ function classifyAusentismoCode(dia, sector){
   if(cat==='AUSENCIA_INJUST' || cat==='AUSENCIA_AVISO') return 'A';
   if(cat==='LIC_GREMIAL') return 'AG';
   if(cat==='LIC_GREMIAL_INFERIDO') return 'AGI';
-  const u = (dia.obs||'').toUpperCase();
-  // Señal directa: Lenox escribe "Retiro anticipado" en la observación — esto
-  // alcanza solo, sin exigir que haya completado 8hs de jornada (alguien que
-  // se retira temprano por estar enfermo, por ejemplo, va a tener MENOS de
-  // 8hs trabajadas, no más — exigir 8hs acá hacía que este caso, el más común
-  // de retiro anticipado, nunca se detectara).
-  if(u.includes('RETIRO ANTICIPADO')) return 'RA';
-  const sa = toMin(dia.salida_anticipada);
-  if(sa > RA_UMBRAL_MIN) return 'RA';
+  const fecha = parseDateDMY(dia.date);
+  if(fecha >= RA_FECHA_CORTE){
+    // Desde el 1/9/2026: RA solo cuando Lenox lo dice explícitamente en la
+    // observación ("Retiro anticipado"). Se sacó la comparación numérica
+    // contra "Salida anticipada" porque marcaba en falso a toda la empresa
+    // en días de "jornada corta" programada.
+    const u = (dia.obs||'').toUpperCase();
+    if(u.includes('RETIRO ANTICIPADO')) return 'RA';
+  } else {
+    // Antes del 1/9/2026: se mantiene la regla original (comparación numérica
+    // con el requisito de 8hs trabajadas), para no mover nada de períodos ya
+    // liquidados con ese criterio.
+    const sa = toMin(dia.salida_anticipada);
+    const normalMin = toMin(dia.normal);
+    if(normalMin >= 8*60 && sa > RA_UMBRAL_MIN) return 'RA';
+  }
   if(toMin(dia.tarde) > 0) return 'LT';
   return 'P';
 }
@@ -2075,7 +2090,7 @@ function iniciarAutoRefresh(){
 }
 
 // ====== Premio cuatrimestral por presentismo ======
-const PREMIO_ROSTER = [{"id":"AGUILAR_GUSTAVO_NICOLAS_EZEQUIEL","legajo":104,"nombre":"AGUILAR GUSTAVO NICOLAS EZEQUIEL","sector":"ARMADO","categoria":"Operario Esp Multiple","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"AGUILAR_VASQUEZ_BRYAN_JEANPIERRE","legajo":237,"nombre":"AGUILAR VASQUEZ BRYAN JEANPIERRE","sector":"FABRICACION","categoria":"OPERARIO CALIFICADO","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"AYALA_JOSE_RAMON","legajo":62,"nombre":"AYALA JOSE RAMON","sector":"FABRICACION","categoria":"Oficial Multiple","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"AZCONA_ALDO_DANIEL","legajo":229,"nombre":"AZCONA ALDO DANIEL","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BACCHETTA_LAUREANO","legajo":134,"nombre":"BACCHETTA LAUREANO","sector":"PINTURA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BARRIOS_DAIANA","legajo":128,"nombre":"BARRIOS DAIANA","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BARRIOS_JONATAN","legajo":167,"nombre":"BARRIOS JONATAN","sector":"EXPEDICION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BARRIOS_MATIAS_GABRIEL","legajo":106,"nombre":"BARRIOS MATIAS GABRIEL","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BRITOS_MARCELO","legajo":39,"nombre":"BRITOS MARCELO","sector":"MANTENIMIENTO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BUCETA_CARLA","legajo":null,"nombre":"BUCETA CARLA","sector":"JEFATURA","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"BUCETA_FEDERICO","legajo":null,"nombre":"BUCETA FEDERICO","sector":"ADMINISTRACION","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"BUCETA_GERMAN_ALBERTO","legajo":null,"nombre":"BUCETA GERMAN ALBERTO","sector":"VENDEDOR","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"BUCETA_SAMANTA","legajo":null,"nombre":"BUCETA SAMANTA","sector":"JEFATURA","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"BUITRAGO_GUSTAVO_EZEQUIEL","legajo":null,"nombre":"BUITRAGO GUSTAVO EZEQUIEL","sector":"DEPOSITO","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"CAPASSO_RICARDO","legajo":null,"nombre":"CAPASSO RICARDO","sector":"MANTENIMIENO Y MATRICERIA","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"DIAZ_CAROLINA_VANESA","legajo":261,"nombre":"DIAZ CAROLINA VANESA","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"DIAZ_MAURO_EZEQUIEL","legajo":212,"nombre":"DIAZ MAURO EZEQUIEL","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"FARINA_FEDERICO","legajo":256,"nombre":"FARIÑA FEDERICO","sector":"PINTURA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"FERNANDEZ_BRENDA_JACQUELINE","legajo":280,"nombre":"FERNANDEZ BRENDA JACQUELINE","sector":"RECEPCION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"FERREYRA_SANTIAGO_NICOLAS","legajo":159,"nombre":"FERREYRA SANTIAGO NICOLAS","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"GALARRAGA_DAIANA_MAGALI","legajo":130,"nombre":"GALARRAGA DAIANA MAGALI","sector":"EXPEDICION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"GOMEZ_NESTOR_ALBERTO","legajo":176,"nombre":"GOMEZ NESTOR ALBERTO","sector":"CHOFER","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"GONZALEZ_MANUEL_LAUTARO_NAHUEL","legajo":279,"nombre":"GONZALEZ MANUEL LAUTARO NAHUEL","sector":"CONTAC CENTER","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"KAPPELER_JOSE","legajo":57,"nombre":"KAPPELER JOSE","sector":"MATRICERIA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"LAMBARE_NOELIA_ROCIO","legajo":183,"nombre":"LAMBARE NOELIA ROCIO","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"LEIVA_TATIANA_LOURDES","legajo":220,"nombre":"LEIVA TATIANA LOURDES","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"LICK_DIEGO_JACOBO","legajo":186,"nombre":"LICK DIEGO JACOBO","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"LO_RUSSO_MARCOS_EMILIO","legajo":263,"nombre":"LO RUSSO MARCOS EMILIO","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"MEDINA_GABRIEL_IVAN","legajo":222,"nombre":"MEDINA GABRIEL IVAN","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"MUNOZ_JUAN_MANUEL","legajo":142,"nombre":"MUÑOZ JUAN MANUEL","sector":"PINTURA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"NOGUERA_PEDRO_SEBASTIAN","legajo":242,"nombre":"NOGUERA PEDRO SEBASTIAN","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"RAMIREZ_MAURO_EZEQUIEL","legajo":206,"nombre":"RAMIREZ MAURO EZEQUIEL","sector":"CHOFER","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"RAMOS_BRANDON_DAMIAN","legajo":270,"nombre":"RAMOS BRANDON DAMIAN","sector":"PINTURA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"RIOS_JORGE","legajo":146,"nombre":"RIOS JORGE","sector":"MATRICERIA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"RUIZ_DARIO_ANDRES","legajo":149,"nombre":"RUIZ DARIO ANDRES","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"SANDOVAL_MIGUEL_ANGEL","legajo":166,"nombre":"SANDOVAL MIGUEL ANGEL","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"SCOLA_ALBERTO_SEBASTIAN","legajo":33,"nombre":"SCOLA ALBERTO SEBASTIAN","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"TORRES_PABLO","legajo":5,"nombre":"TORRES PABLO","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"YELLI_MATIAS_GUILLERMO","legajo":264,"nombre":"YELLI MATIAS GUILLERMO","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"ZELARAYAN_JOSE_FACUNDO","legajo":190,"nombre":"ZELARAYAN JOSE FACUNDO","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"ZUNIGA_BRENDA_VANINA","legajo":203,"nombre":"ZUÑIGA BRENDA VANINA","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"}];
+const PREMIO_ROSTER = [{"id":"AGUILAR_GUSTAVO_NICOLAS_EZEQUIEL","legajo":104,"nombre":"AGUILAR GUSTAVO NICOLAS EZEQUIEL","sector":"ARMADO","categoria":"Operario Esp Multiple","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"AGUILAR_VASQUEZ_BRYAN_JEANPIERRE","legajo":237,"nombre":"AGUILAR VASQUEZ BRYAN JEANPIERRE","sector":"FABRICACION","categoria":"OPERARIO CALIFICADO","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"AYALA_JOSE_RAMON","legajo":62,"nombre":"AYALA JOSE RAMON","sector":"FABRICACION","categoria":"Oficial Multiple","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"AZCONA_ALDO_DANIEL","legajo":229,"nombre":"AZCONA ALDO DANIEL","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BACCHETTA_LAUREANO","legajo":134,"nombre":"BACCHETTA LAUREANO","sector":"PINTURA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BARRIOS_DAIANA","legajo":128,"nombre":"BARRIOS DAIANA","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BARRIOS_JONATAN","legajo":167,"nombre":"BARRIOS JONATAN","sector":"EXPEDICION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BARRIOS_MATIAS_GABRIEL","legajo":106,"nombre":"BARRIOS MATIAS GABRIEL","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BRITOS_MARCELO","legajo":39,"nombre":"BRITOS MARCELO","sector":"MANTENIMIENTO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"BUCETA_CARLA","legajo":null,"nombre":"BUCETA CARLA","sector":"JEFATURA","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"BUCETA_FEDERICO","legajo":null,"nombre":"BUCETA FEDERICO","sector":"ADMINISTRACION","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"BUCETA_GERMAN_ALBERTO","legajo":null,"nombre":"BUCETA GERMAN ALBERTO","sector":"VENDEDOR","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"BUCETA_SAMANTA","legajo":null,"nombre":"BUCETA SAMANTA","sector":"JEFATURA","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"BUITRAGO_GUSTAVO_EZEQUIEL","legajo":null,"nombre":"BUITRAGO GUSTAVO EZEQUIEL","sector":"DEPOSITO","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"CAPASSO_RICARDO","legajo":null,"nombre":"CAPASSO RICARDO","sector":"MANTENIMIENO Y MATRICERIA","categoria":"","tipo":"Mensual","empresa":"SPOTSLINE"},{"id":"DIAZ_CAROLINA_VANESA","legajo":261,"nombre":"DIAZ CAROLINA VANESA","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"DIAZ_MAURO_EZEQUIEL","legajo":212,"nombre":"DIAZ MAURO EZEQUIEL","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"FARINA_FEDERICO","legajo":256,"nombre":"FARIÑA FEDERICO","sector":"PINTURA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"FERNANDEZ_BRENDA_JACQUELINE","legajo":280,"nombre":"FERNANDEZ BRENDA JACQUELINE","sector":"RECEPCION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"FERREYRA_SANTIAGO_NICOLAS","legajo":159,"nombre":"FERREYRA SANTIAGO NICOLAS","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"GALARRAGA_DAIANA_MAGALI","legajo":130,"nombre":"GALARRAGA DAIANA MAGALI","sector":"EXPEDICION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"GOMEZ_NESTOR_ALBERTO","legajo":176,"nombre":"GOMEZ NESTOR ALBERTO","sector":"CHOFER","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"GONZALEZ_MANUEL_LAUTARO_NAHUEL","legajo":279,"nombre":"GONZALEZ MANUEL LAUTARO NAHUEL","sector":"CONTAC CENTER","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"KAPPELER_JOSE","legajo":57,"nombre":"KAPPELER JOSE","sector":"MATRICERIA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"LAMBARE_NOELIA_ROCIO","legajo":183,"nombre":"LAMBARE NOELIA ROCIO","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"LEIVA_TATIANA_LOURDES","legajo":220,"nombre":"LEIVA TATIANA LOURDES","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"LICK_DIEGO_JACOBO","legajo":186,"nombre":"LICK DIEGO JACOBO","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"LO_RUSSO_MARCOS_EMILIO","legajo":263,"nombre":"LO RUSSO MARCOS EMILIO","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"MEDINA_GABRIEL_IVAN","legajo":222,"nombre":"MEDINA GABRIEL IVAN","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"MUNOZ_JUAN_MANUEL","legajo":142,"nombre":"MUÑOZ JUAN MANUEL","sector":"PINTURA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"NOGUERA_PEDRO_SEBASTIAN","legajo":242,"nombre":"NOGUERA PEDRO SEBASTIAN","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"RAMIREZ_MAURO_EZEQUIEL","legajo":206,"nombre":"RAMIREZ MAURO EZEQUIEL","sector":"CHOFER","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"RAMOS_BRANDON_DAMIAN","legajo":270,"nombre":"RAMOS BRANDON DAMIAN","sector":"PINTURA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"RIOS_JORGE","legajo":146,"nombre":"RIOS JORGE","sector":"MATRICERIA","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"RUIZ_DARIO_ANDRES","legajo":149,"nombre":"RUIZ DARIO ANDRES","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"SANDOVAL_MIGUEL_ANGEL","legajo":166,"nombre":"SANDOVAL MIGUEL ANGEL","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"SCOLA_ALBERTO_SEBASTIAN","legajo":33,"nombre":"SCOLA ALBERTO SEBASTIAN","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"TORRES_PABLO","legajo":5,"nombre":"TORRES PABLO","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"YELLI_MATIAS_GUILLERMO","legajo":264,"nombre":"YELLI MATIAS GUILLERMO","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"ZELARAYAN_JOSE_FACUNDO","legajo":190,"nombre":"ZELARAYAN JOSE FACUNDO","sector":"FABRICACION","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"},{"id":"ZUNIGA_BRENDA_VANINA","legajo":203,"nombre":"ZUÑIGA BRENDA VANINA","sector":"ARMADO","categoria":"","tipo":"Jornalizado","empresa":"SPOTSLINE"}];
 
 const PREMIO_TIPOS = {
   ausencia_justificada:   { label: 'Ausencia justificada',   peso: 1 },
@@ -2106,6 +2121,8 @@ let PREMIO_STATE = { montoBase: PREMIO_DEFAULT_MONTO, employees: {} };
 let PREMIO_AUTO = {}; // { empId: [ {key,date,tipo,obs} ] }
 let premioOpenRowId = null;
 let premioFiltroSemaforo = null;
+let premioSortField = 'semaforo'; // nombre | sector | puntos | semaforo | monto
+let premioSortDir = 'asc';        // asc | desc
 
 function premioMatchAusentismo(nombreRoster, employees){
   const rn = normTokens(nombreRoster);
@@ -2172,22 +2189,65 @@ function premioEfectivas(empId){
     .map(item => ({ id: item.key, tipo: item.tipo, cantidad: 1, motivo: item.date + (item.obs?(' — '+item.obs):''), auto:true }));
   return [...auto, ...st.manual];
 }
-function premioPuntos(empId){
+function premioPuntosLive(empId){
   return premioEfectivas(empId).reduce((s,a)=> s + (PREMIO_TIPOS[a.tipo]?.peso||0) * (a.cantidad||1), 0);
 }
 function premioSugerido(pts){ return pts===0 ? 'verde' : (pts<=2 ? 'amarillo' : 'rojo'); }
-function premioEstado(empId){
+function premioEstadoLive(empId){
   const st = premioGetEmp(empId);
-  return st.override.estado || premioSugerido(premioPuntos(empId));
+  return st.override.estado || premioSugerido(premioPuntosLive(empId));
 }
-function premioMonto(empId){
+function premioMontoLive(empId){
   const st = premioGetEmp(empId);
   if(st.override.pct !== null && st.override.pct !== undefined && st.override.pct !== ''){
     return Math.round(PREMIO_STATE.montoBase * (Number(st.override.pct)/100));
   }
-  return premioEstado(empId)==='rojo' ? 0 : PREMIO_STATE.montoBase;
+  return premioEstadoLive(empId)==='rojo' ? 0 : PREMIO_STATE.montoBase;
+}
+// Si el cuatrimestre está cerrado (pagado), estas tres devuelven la foto
+// congelada al momento del cierre en vez de recalcular en vivo — así una
+// corrección posterior en Ausentismo (o un cambio de regla como el de RA)
+// nunca mueve un número que ya se pagó.
+function premioPuntos(empId){
+  if(PREMIO_STATE.cerrado && PREMIO_STATE.snapshot && PREMIO_STATE.snapshot[empId]) return PREMIO_STATE.snapshot[empId].puntos;
+  return premioPuntosLive(empId);
+}
+function premioEstado(empId){
+  if(PREMIO_STATE.cerrado && PREMIO_STATE.snapshot && PREMIO_STATE.snapshot[empId]) return PREMIO_STATE.snapshot[empId].estado;
+  return premioEstadoLive(empId);
+}
+function premioMonto(empId){
+  if(PREMIO_STATE.cerrado && PREMIO_STATE.snapshot && PREMIO_STATE.snapshot[empId]) return PREMIO_STATE.snapshot[empId].monto;
+  return premioMontoLive(empId);
+}
+async function premioCerrarPeriodo(){
+  if(!confirm('Esto va a fijar los puntos, el semáforo y el monto de cada persona tal como están ahora mismo — aunque después cambien los datos de Ausentismo o las reglas, este período no se va a mover más. ¿Confirmás que ya se pagó y querés cerrarlo?')) return;
+  const snapshot = {};
+  premioRosterElegible().forEach(emp=>{
+    snapshot[emp.id] = {
+      puntos: premioPuntosLive(emp.id),
+      estado: premioEstadoLive(emp.id),
+      monto: premioMontoLive(emp.id),
+      comentario: premioResumenMotivoLive(emp.id),
+    };
+  });
+  PREMIO_STATE.cerrado = true;
+  PREMIO_STATE.snapshot = snapshot;
+  PREMIO_STATE.cerradoFecha = new Date().toISOString();
+  await premioSave();
+  await premioRenderAll();
+}
+async function premioReabrirPeriodo(){
+  if(!confirm('Esto vuelve a dejar el período editable y los números van a recalcularse en vivo. ¿Confirmás que querés reabrirlo?')) return;
+  PREMIO_STATE.cerrado = false;
+  await premioSave();
+  await premioRenderAll();
 }
 function premioResumenMotivo(empId){
+  if(PREMIO_STATE.cerrado && PREMIO_STATE.snapshot && PREMIO_STATE.snapshot[empId]) return PREMIO_STATE.snapshot[empId].comentario;
+  return premioResumenMotivoLive(empId);
+}
+function premioResumenMotivoLive(empId){
   const anns = premioEfectivas(empId);
   if(!anns.length) return '';
   const conteo = {};
@@ -2285,16 +2345,33 @@ function premioDetailHtml(emp){
 
 function premioRenderTable(){
   const tbody = document.getElementById('premioTbody');
-  const orden = { verde:0, amarillo:1, rojo:2 };
-  let lista = premioRosterElegible().map(emp=>({emp, est: premioEstado(emp.id)}));
+  const ordenSemaforo = { verde:0, amarillo:1, rojo:2 };
+  let lista = premioRosterElegible().map(emp=>({
+    emp,
+    est: premioEstado(emp.id),
+    puntos: premioPuntos(emp.id),
+    monto: premioMonto(emp.id),
+  }));
   if(premioFiltroSemaforo) lista = lista.filter(x=>x.est===premioFiltroSemaforo);
-  lista.sort((a,b)=> (orden[a.est]-orden[b.est]) || a.emp.nombre.localeCompare(b.emp.nombre));
+
+  const dir = premioSortDir === 'desc' ? -1 : 1;
+  const cmp = {
+    nombre:   (a,b) => a.emp.nombre.localeCompare(b.emp.nombre),
+    sector:   (a,b) => a.emp.sector.localeCompare(b.emp.sector) || a.emp.nombre.localeCompare(b.emp.nombre),
+    puntos:   (a,b) => (a.puntos - b.puntos) || a.emp.nombre.localeCompare(b.emp.nombre),
+    semaforo: (a,b) => (ordenSemaforo[a.est] - ordenSemaforo[b.est]) || a.emp.nombre.localeCompare(b.emp.nombre),
+    monto:    (a,b) => (a.monto - b.monto) || a.emp.nombre.localeCompare(b.emp.nombre),
+  }[premioSortField] || ((a,b)=>0);
+  lista.sort((a,b) => dir * cmp(a,b));
+
+  document.querySelectorAll('.sort-arrow').forEach(el=> el.textContent = '');
+  const arrowEl = document.getElementById('arrow-'+premioSortField);
+  if(arrowEl) arrowEl.textContent = premioSortDir==='asc' ? '▲' : '▼';
+
   let html = '';
-  lista.forEach(({emp, est})=>{
+  lista.forEach(({emp, est, puntos, monto})=>{
     const st = premioGetEmp(emp.id);
-    const puntos = premioPuntos(emp.id);
     const isOverride = !!st.override.estado || (st.override.pct!==null && st.override.pct!==undefined && st.override.pct!=='');
-    const monto = premioMonto(emp.id);
     const open = premioOpenRowId===emp.id;
     html += `<tr class="premio-row" data-emp="${emp.id}" style="cursor:pointer;">
       <td>${open?'▾':'▸'}</td>
@@ -2322,6 +2399,7 @@ function premioAttachHandlers(){
   document.querySelectorAll('[data-premio-action="add"]').forEach(btn=>{
     btn.addEventListener('click', async (e)=>{
       e.stopPropagation();
+      if(PREMIO_STATE.cerrado){ alert('Este período está cerrado y pagado — reabrilo primero si necesitás editarlo.'); return; }
       const empId = btn.getAttribute('data-emp');
       const tipo = document.getElementById('premio-tipo-'+empId).value;
       const cantidad = Math.max(1, parseInt(document.getElementById('premio-cant-'+empId).value||'1',10));
@@ -2333,6 +2411,7 @@ function premioAttachHandlers(){
   document.querySelectorAll('[data-premio-action="del"]').forEach(btn=>{
     btn.addEventListener('click', async (e)=>{
       e.stopPropagation();
+      if(PREMIO_STATE.cerrado){ alert('Este período está cerrado y pagado — reabrilo primero si necesitás editarlo.'); return; }
       const empId = btn.getAttribute('data-emp'), annId = btn.getAttribute('data-ann');
       const st = premioGetEmp(empId);
       st.manual = st.manual.filter(a=>a.id!==annId);
@@ -2342,6 +2421,7 @@ function premioAttachHandlers(){
   document.querySelectorAll('[data-premio-action="excluir"]').forEach(btn=>{
     btn.addEventListener('click', async (e)=>{
       e.stopPropagation();
+      if(PREMIO_STATE.cerrado){ alert('Este período está cerrado y pagado — reabrilo primero si necesitás editarlo.'); return; }
       const empId = btn.getAttribute('data-emp'), key = btn.getAttribute('data-key');
       const st = premioGetEmp(empId);
       if(!st.excluidos.includes(key)) st.excluidos.push(key);
@@ -2351,6 +2431,7 @@ function premioAttachHandlers(){
   document.querySelectorAll('[data-premio-action="reincluir"]').forEach(btn=>{
     btn.addEventListener('click', async (e)=>{
       e.stopPropagation();
+      if(PREMIO_STATE.cerrado){ alert('Este período está cerrado y pagado — reabrilo primero si necesitás editarlo.'); return; }
       const empId = btn.getAttribute('data-emp'), key = btn.getAttribute('data-key');
       const st = premioGetEmp(empId);
       st.excluidos = st.excluidos.filter(k=>k!==key);
@@ -2360,6 +2441,7 @@ function premioAttachHandlers(){
   document.querySelectorAll('[data-premio-action="save-override"]').forEach(btn=>{
     btn.addEventListener('click', async (e)=>{
       e.stopPropagation();
+      if(PREMIO_STATE.cerrado){ alert('Este período está cerrado y pagado — reabrilo primero si necesitás editarlo.'); return; }
       const empId = btn.getAttribute('data-emp');
       const st = premioGetEmp(empId);
       const estadoVal = document.getElementById('premio-override-estado-'+empId).value;
@@ -2382,8 +2464,24 @@ function premioRenderHeader(){
   if(excluidos>0) sub += ` · ${excluidos} persona(s) Mensual/jefatura quedan fuera.`;
   document.getElementById('premioSubNote').textContent = sub;
   document.getElementById('premioMontoBaseInput').value = PREMIO_STATE.montoBase;
+  document.getElementById('premioMontoBaseInput').disabled = !!PREMIO_STATE.cerrado;
   const sel = document.getElementById('premioPeriodSelect');
   sel.innerHTML = PREMIO_PERIODOS.map(p=>`<option value="${p.id}" ${p.id===premioPeriodo?'selected':''}>${p.label}</option>`).join('');
+
+  const banner = document.getElementById('premioCerradoBanner');
+  const btnCerrar = document.getElementById('btnPremioCerrar');
+  const btnReabrir = document.getElementById('btnPremioReabrir');
+  if(PREMIO_STATE.cerrado){
+    const fecha = PREMIO_STATE.cerradoFecha ? new Date(PREMIO_STATE.cerradoFecha).toLocaleDateString('es-AR') : '';
+    banner.style.display = 'block';
+    banner.textContent = `🔒 Este período está cerrado y pagado (fijado el ${fecha}). Los números no se recalculan aunque cambien los datos de Ausentismo.`;
+    btnCerrar.style.display = 'none';
+    btnReabrir.style.display = '';
+  } else {
+    banner.style.display = 'none';
+    btnCerrar.style.display = '';
+    btnReabrir.style.display = 'none';
+  }
 }
 
 async function premioRenderAll(){
@@ -2395,6 +2493,21 @@ async function premioRenderAll(){
 async function initPremio(){
   await premioLoadPeriodo(premioPeriodo);
   await premioRenderAll();
+
+  // Delegado en la cabecera de la tabla (que nunca se redibuja) para que el
+  // click de ordenar quede enganchado una sola vez, no una vez por cada render.
+  document.querySelector('#tab-premio table thead').addEventListener('click', (e)=>{
+    const th = e.target.closest('.premio-sortable');
+    if(!th) return;
+    const field = th.getAttribute('data-sort');
+    if(premioSortField === field){
+      premioSortDir = premioSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      premioSortField = field;
+      premioSortDir = 'asc';
+    }
+    premioRenderTable();
+  });
 
   document.getElementById('premioPeriodSelect').addEventListener('change', async (e)=>{
     premioPeriodo = e.target.value;
@@ -2415,6 +2528,8 @@ async function initPremio(){
   });
   document.getElementById('btnPremioExportExcel').addEventListener('click', premioExportExcel);
   document.getElementById('btnPremioExportPDF').addEventListener('click', premioExportPDF);
+  document.getElementById('btnPremioCerrar').addEventListener('click', premioCerrarPeriodo);
+  document.getElementById('btnPremioReabrir').addEventListener('click', premioReabrirPeriodo);
   document.getElementById('btnPremioRecibos').addEventListener('click', abrirModalRecibos);
   document.getElementById('recibosCloseX').addEventListener('click', ()=>document.getElementById('overlayRecibos').classList.remove('open'));
   document.getElementById('recibosCancelar').addEventListener('click', ()=>document.getElementById('overlayRecibos').classList.remove('open'));
