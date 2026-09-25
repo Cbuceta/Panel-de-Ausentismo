@@ -201,6 +201,24 @@
   .btn.small{padding:5px 10px; font-size:12px; font-weight:600; border-radius:5px;}
   .empty-hint{color:var(--muted); font-size:12px; padding:6px 0;}
 
+  /* ====== Recibos de premio (impresión) ====== */
+  #reciboPrintArea{display:none;}
+  .recibo-page{width:100%;}
+  .recibo{
+    border:1.5px solid #000; margin-bottom:6mm; page-break-inside:avoid;
+    font-family: Arial, Helvetica, sans-serif; color:#000; background:#fff;
+  }
+  .recibo-page.page-break{page-break-after:always;}
+  .recibo table.recibo-table{width:100%; border-collapse:collapse; font-size:12px;}
+  .recibo-table td{border:1px solid #000; padding:4px 8px; height:20px;}
+  .recibo-table td.rt-label{font-weight:700; width:110px; background:#f2f2f2;}
+  .recibo-title{text-align:center; font-weight:800; font-size:14px; letter-spacing:.05em; padding:6px !important; background:#fff !important;}
+  .recibo-table td.rt-importe{font-weight:700; font-size:13px;}
+  .recibo-table td.rt-firma{text-align:center; font-weight:600; padding-top:14px !important; border-top:1.5px solid #000 !important;}
+  @media print{
+    body.printing-recibos #reciboPrintArea{display:block !important;}
+  }
+
   .filter-note{font-size:11.5px; color:var(--amber); font-family:var(--mono); margin:-4px 0 10px;}
   .period-filter{display:flex; align-items:flex-end; gap:10px; margin-bottom:14px; flex-wrap:wrap;}
   .period-filter .field{margin-bottom:0; min-width:140px;}
@@ -302,6 +320,18 @@
     #resumenDiario th:first-child, #resumenDiario td:first-child{text-align:left !important; font-weight:650;}
     #resumenDiario tbody td{font-size:14px; font-weight:700;}
     #resumenDiario thead th{color:#555; background:#fff;}
+  }
+
+  /* Recibos: pisa las reglas de impresión de arriba cuando estamos imprimiendo recibos */
+  @media print{
+    body.printing-recibos *{visibility:hidden !important;}
+    body.printing-recibos #reciboPrintArea,
+    body.printing-recibos #reciboPrintArea *{visibility:visible !important;}
+    body.printing-recibos #reciboPrintArea{
+      display:block !important; position:absolute; left:0; top:0; width:100%; background:#fff;
+    }
+    body.printing-recibos{background:#fff !important;}
+    @page{ size: portrait; margin: 10mm; }
   }
 </style>
 </head>
@@ -447,6 +477,7 @@
           <input type="number" id="premioMontoBaseInput" step="1">
         </div>
         <button class="btn secondary" id="btnPremioCriterios">ℹ Criterios</button>
+        <button class="btn secondary" id="btnPremioRecibos">🖨 Recibos</button>
         <button class="btn secondary" id="btnPremioExportPDF">Exportar a PDF</button>
         <button class="btn" id="btnPremioExportExcel">Exportar a Excel</button>
       </div>
@@ -577,6 +608,39 @@
     </div>
   </div>
 </div>
+
+<div class="overlay" id="overlayRecibos">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <h3>Generar recibos del premio cuatrimestral</h3>
+        <div class="meta">5 recibos por hoja, listos para imprimir y firmar.</div>
+      </div>
+      <button class="close" id="recibosCloseX">&times;</button>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Concepto</label>
+        <input type="text" id="reciboConcepto" value="PREMIO CUATRIMESTRAL">
+      </div>
+      <div class="field">
+        <label>Fecha de pago</label>
+        <input type="date" id="reciboFecha">
+      </div>
+    </div>
+    <div style="display:flex; gap:10px; margin-bottom:10px;">
+      <button class="btn secondary small" id="btnRecibosTodos">Marcar todos los que cobran</button>
+      <button class="btn secondary small" id="btnRecibosNinguno">Ninguno</button>
+    </div>
+    <div class="table-wrap" style="max-height:45vh"><table id="tblRecibosSeleccion"></table></div>
+    <div class="modal-actions">
+      <button class="btn secondary" id="recibosCancelar">Cancelar</button>
+      <button class="btn" id="btnRecibosGenerar">🖨 Generar e imprimir</button>
+    </div>
+  </div>
+</div>
+
+<div id="reciboPrintArea"></div>
 
 <footer>Panel colaborativo — las novedades que carga cualquier persona quedan guardadas y visibles para todos los que abran este panel.</footer>
 
@@ -725,9 +789,15 @@ function classifyAusentismoCode(dia, sector){
   if(cat==='AUSENCIA_INJUST' || cat==='AUSENCIA_AVISO') return 'A';
   if(cat==='LIC_GREMIAL') return 'AG';
   if(cat==='LIC_GREMIAL_INFERIDO') return 'AGI';
+  const u = (dia.obs||'').toUpperCase();
+  // Señal directa: Lenox escribe "Retiro anticipado" en la observación — esto
+  // alcanza solo, sin exigir que haya completado 8hs de jornada (alguien que
+  // se retira temprano por estar enfermo, por ejemplo, va a tener MENOS de
+  // 8hs trabajadas, no más — exigir 8hs acá hacía que este caso, el más común
+  // de retiro anticipado, nunca se detectara).
+  if(u.includes('RETIRO ANTICIPADO')) return 'RA';
   const sa = toMin(dia.salida_anticipada);
-  const normalMin = toMin(dia.normal);
-  if(normalMin >= 8*60 && sa > RA_UMBRAL_MIN) return 'RA';
+  if(sa > RA_UMBRAL_MIN) return 'RA';
   if(toMin(dia.tarde) > 0) return 'LT';
   return 'P';
 }
@@ -2345,6 +2415,99 @@ async function initPremio(){
   });
   document.getElementById('btnPremioExportExcel').addEventListener('click', premioExportExcel);
   document.getElementById('btnPremioExportPDF').addEventListener('click', premioExportPDF);
+  document.getElementById('btnPremioRecibos').addEventListener('click', abrirModalRecibos);
+  document.getElementById('recibosCloseX').addEventListener('click', ()=>document.getElementById('overlayRecibos').classList.remove('open'));
+  document.getElementById('recibosCancelar').addEventListener('click', ()=>document.getElementById('overlayRecibos').classList.remove('open'));
+  document.getElementById('overlayRecibos').addEventListener('click', (e)=>{ if(e.target.id==='overlayRecibos') e.currentTarget.classList.remove('open'); });
+  document.getElementById('btnRecibosTodos').addEventListener('click', ()=>{
+    document.querySelectorAll('#tblRecibosSeleccion input[type=checkbox]').forEach(cb=>{ if(!cb.disabled) cb.checked = true; });
+  });
+  document.getElementById('btnRecibosNinguno').addEventListener('click', ()=>{
+    document.querySelectorAll('#tblRecibosSeleccion input[type=checkbox]').forEach(cb=> cb.checked = false);
+  });
+  document.getElementById('btnRecibosGenerar').addEventListener('click', generarEImprimirRecibos);
+}
+
+function abrirModalRecibos(){
+  const tbody = document.getElementById('tblRecibosSeleccion');
+  const ordenado = premioOrdenados();
+  let html = '<thead><tr><th></th><th>Nombre</th><th>Legajo</th><th class="num">Monto</th></tr></thead><tbody>';
+  ordenado.forEach(({emp, est})=>{
+    const monto = premioMonto(emp.id);
+    const cobra = monto > 0;
+    html += `<tr>
+      <td><input type="checkbox" data-recibo-emp="${emp.id}" ${cobra?'checked':''} ${cobra?'':'disabled'}></td>
+      <td class="name">${premioEsc(emp.nombre)}</td>
+      <td class="legajo">${emp.legajo||'—'}</td>
+      <td class="num">${premioFmtMoney(monto)}${cobra?'':' (no cobra)'}</td>
+    </tr>`;
+  });
+  html += '</tbody>';
+  tbody.innerHTML = html;
+  document.getElementById('overlayRecibos').classList.add('open');
+}
+
+function numeroALetras(monto){
+  // formato simple: monto en pesos con separador de miles, sin conversión a palabras
+  return premioFmtMoney(monto);
+}
+
+function reciboHtml(emp, legajoTxt, monto, concepto, fechaTxt){
+  return `
+    <div class="recibo">
+      <table class="recibo-table">
+        <tr><td colspan="4" class="recibo-title">ADICIONAL</td></tr>
+        <tr>
+          <td class="rt-label">Legajo</td><td>${legajoTxt}</td>
+          <td class="rt-label">Fecha de Pago</td><td>${fechaTxt}</td>
+        </tr>
+        <tr>
+          <td class="rt-label">Nombre y Apellido</td><td colspan="3">${premioEsc(emp.nombre)}</td>
+        </tr>
+        <tr>
+          <td class="rt-label">Importe</td><td colspan="3" class="rt-importe">$ ${numeroALetras(monto)}</td>
+        </tr>
+        <tr>
+          <td class="rt-label">Concepto</td><td colspan="3">${premioEsc(concepto)}</td>
+        </tr>
+        <tr><td colspan="2"></td><td colspan="2" class="rt-firma">Recibí conforme</td></tr>
+      </table>
+    </div>
+  `;
+}
+
+function generarEImprimirRecibos(){
+  const seleccionados = Array.from(document.querySelectorAll('#tblRecibosSeleccion input[type=checkbox]:checked'))
+    .map(cb => cb.getAttribute('data-recibo-emp'));
+  if(!seleccionados.length){ alert('Elegí al menos una persona.'); return; }
+  const concepto = document.getElementById('reciboConcepto').value.trim() || 'PREMIO CUATRIMESTRAL';
+  const fechaIso = document.getElementById('reciboFecha').value;
+  const fechaTxt = fechaIso ? fmtDateInputToDMY(fechaIso) : '';
+
+  const items = seleccionados.map(id=>{
+    const emp = PREMIO_ROSTER.find(e=>e.id===id);
+    const monto = premioMonto(id);
+    return { emp, monto };
+  });
+
+  let html = '';
+  for(let i=0; i<items.length; i+=5){
+    const grupo = items.slice(i, i+5);
+    const esUltimo = (i+5) >= items.length;
+    html += `<div class="recibo-page${esUltimo?'':' page-break'}">`;
+    grupo.forEach(({emp, monto})=>{
+      html += reciboHtml(emp, emp.legajo||'—', monto, concepto, fechaTxt);
+    });
+    html += `</div>`;
+  }
+
+  document.getElementById('reciboPrintArea').innerHTML = html;
+  document.getElementById('overlayRecibos').classList.remove('open');
+  document.body.classList.add('printing-recibos');
+  const limpiar = ()=>{ document.body.classList.remove('printing-recibos'); window.removeEventListener('afterprint', limpiar); };
+  window.addEventListener('afterprint', limpiar);
+  window.print();
+  setTimeout(limpiar, 3000);
 }
 
 function premioOrdenados(){
