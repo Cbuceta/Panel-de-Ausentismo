@@ -408,6 +408,7 @@
         <div class="note">P = presente, A = ausencia, L = licencia enfermedad, V = vacaciones, AG = actividad gremial, RA = retiro anticipado, LT = llegada tarde.</div>
       </div>
       <div class="actions">
+        <button class="btn secondary" id="btnToggleFinde">Mostrar fines de semana</button>
         <button class="btn secondary" id="btnDescargarPDF">Descargar PDF</button>
         <button class="btn secondary" id="btnDescargarJPG">Descargar JPG</button>
         <button class="btn secondary" id="btnDescargarGrilla">Imprimir</button>
@@ -1868,6 +1869,7 @@ function renderResumenDiario(rosterList, fechas){
   document.getElementById('resumenDiario').innerHTML = html;
 }
 
+let mostrarFinesDeSemana = false;
 function renderGrilla(){
   const rosterList = getFilteredRoster();
   if(rosterList.length===0 && viewMode==='mensual'){
@@ -1881,6 +1883,10 @@ function renderGrilla(){
   let fechas = [...new Set(DATASET.flatMap(e=>e.dias.map(d=>d.date)))].sort((a,b)=>parseDateDMY(a)-parseDateDMY(b));
   if(periodDesde || periodHasta){
     fechas = fechas.filter(f=>dateInRange(f, periodDesde, periodHasta));
+  }
+  // Fines de semana fuera de la visualización (sábado=6, domingo=0)
+  if(!mostrarFinesDeSemana){
+    fechas = fechas.filter(f=>{ const g = parseDateDMY(f).getDay(); return g!==0 && g!==6; });
   }
 
   let html = '<thead><tr><th>Legajo</th><th>Nombre</th>' + fechas.map(f=>`<th>${f.slice(0,5)}</th>`).join('') + '</tr></thead><tbody>';
@@ -2519,6 +2525,11 @@ async function initPremio(){
     const v = Number(e.target.value);
     if(!isNaN(v) && v>0){ PREMIO_STATE.montoBase = v; await premioSave(); await premioRenderAll(); }
   });
+  document.getElementById('btnToggleFinde').addEventListener('click', ()=>{
+    mostrarFinesDeSemana = !mostrarFinesDeSemana;
+    document.getElementById('btnToggleFinde').textContent = mostrarFinesDeSemana ? 'Ocultar fines de semana' : 'Mostrar fines de semana';
+    renderGrilla();
+  });
   document.getElementById('btnPremioCriterios').addEventListener('click', ()=>{
     const panel = document.getElementById('premioCriteriosPanel');
     const btn = document.getElementById('btnPremioCriterios');
@@ -2750,6 +2761,21 @@ async function init(){
   });
 
   populateMesSelect();
+  // Pantalla principal: arranca en el mes en curso. Si todavía no hay datos de
+  // este mes, usa el último mes que sí tenga datos cargados. "Ver todo" sigue
+  // disponible para sacar el filtro.
+  (function aplicarMesEnCurso(){
+    const months = getAvailableMonths(DATASET);
+    if(!months.length) return;
+    const hoy = new Date();
+    const actual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+    const elegido = months.includes(actual) ? actual : months[months.length-1];
+    const [y,m] = elegido.split('-').map(Number);
+    periodDesde = new Date(y, m-1, 1);
+    periodHasta = new Date(y, m, 0, 23,59,59);
+    document.getElementById('selectMes').value = elegido;
+    recomputeAndRender();
+  })();
   document.getElementById('selectMes').addEventListener('change', (e)=>{
     const val = e.target.value;
     if(!val){ return; }
