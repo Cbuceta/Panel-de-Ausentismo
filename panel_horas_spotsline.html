@@ -1157,6 +1157,7 @@
         <button class="btn secondary" id="btnRopaCampanias">Campañas</button>
         <button class="btn secondary" id="btnRopaPrendas">Prendas</button>
         <button class="btn secondary" id="btnRopaImportar">⭱ Importar talles (Excel)</button>
+        <button class="btn secondary" id="btnRopaPlantillaTalles" title="Planilla con los talles actuales en formato lista (Legajo · Nombre y apellido · Tipo de ropa · Talle), lista para completar e importar">Descargar planilla de talles</button>
         <input type="file" id="ropaFile" accept=".xlsx" style="display:none">
       </div>
     </div>
@@ -1658,6 +1659,19 @@
     <div class="modal-actions">
       <button class="btn secondary" id="masCancelar">Cancelar</button>
       <button class="btn" id="masConfirmar">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="overlayRopaTalles">
+  <div class="modal usr-modal" style="max-width:760px;">
+    <div class="modal-head"><div><h3>Importar talles</h3><div class="meta" id="talImpResumen"></div></div></div>
+    <div class="note" style="margin-bottom:8px;">Revisá a qué talle del panel va cada columna o tipo de ropa de la planilla. Lo que dejes en "(no importar)" se ignora. Las celdas vacías o con "-" no borran lo que ya está cargado.</div>
+    <div class="table-wrap" style="max-height:30vh;"><table id="talImpMapa"></table></div>
+    <div id="talImpPersonas" style="margin-top:10px; font-size:12.5px;"></div>
+    <div class="modal-actions">
+      <button class="btn secondary" id="talImpCancelar">Cancelar</button>
+      <button class="btn" id="talImpConfirmar">Importar talles</button>
     </div>
   </div>
 </div>
@@ -6389,46 +6403,124 @@ async function guardarPrendas(){
 }
 
 // ---- importar talles desde la planilla de solicitud ----
+// ---- importación masiva de talles ----
+// Acepta: (a) una fila por persona con una columna por prenda (Remera, Pantalón, Camisa, Zapatos…)
+//         (b) una fila por prenda: Nombre y apellido · Tipo de ropa · Talle   (opcional: Legajo)
+let _talImp = null;
+function claveTalleDeTexto(txt){
+  const n = normTxt(txt).replace(/\bTALLES?\b/g,'').replace(/\bDE TRABAJO\b/g,'').trim(); if(!n) return '';
+  const campos = tallesCampos(), cat = ropaCatalogoActual();
+  const sing = x => x.split(' ').map(w=>w.replace(/(ES|S)$/,'')).join(' ');
+  if(/NAUTIC/.test(n)){ const it = cat.find(i=>/NAUTIC/.test(normTxt(i.nombre))); if(it) return it.talle; }
+  let c = campos.find(c=>normTxt(c.t)===n || normTxt(c.k)===n || sing(normTxt(c.t))===sing(n)); if(c) return c.k;
+  let it = cat.find(i=>normTxt(i.nombre)===n || sing(normTxt(i.nombre))===sing(n)); if(it && it.talle!=='ninguno') return it.talle;
+  const pal = sing(n).split(' ')[0];
+  const cand = cat.filter(i=>i.talle!=='ninguno' && !/NAUTIC/.test(normTxt(i.nombre)) && sing(normTxt(i.nombre)).split(' ').includes(pal));
+  return cand.length===1 ? cand[0].talle : '';
+}
+function buscarPersona(nombre, legajo, activos){
+  if(legajo!=='' && legajo!=null && !isNaN(Number(legajo))){
+    const p = activos.find(x=>x.legajo!=null && Number(x.legajo)===Number(legajo));
+    if(p){ const tk = normTokens(String(nombre||'')); const en = normTokens(p.nombre); if(!tk.size || [...tk].some(t=>t.length>2 && en.has(t))) return p; }
+  }
+  const tk = [...normTokens(String(nombre||''))]; if(!tk.length) return null;
+  let best=null, bs=0, empate=false;
+  for(const p of activos){
+    const en = [...normTokens(p.nombre)];
+    // cuenta palabras iguales; una inicial ("E.") vale si coincide con el comienzo de un nombre
+    let sc=0; tk.forEach(t=>{ if(t.length<=2 ? en.some(w=>w.startsWith(t)) : en.includes(t)) sc++; });
+    const completas = tk.filter(t=>t.length>2).length;
+    if(sc>=2 && sc>=Math.min(tk.length, en.length) && completas>=2){ if(sc>bs){ bs=sc; best=p; empate=false; } else if(sc===bs) empate=true; }
+  }
+  return empate ? null : best;
+}
 async function importarTalles(file){
   const st = document.getElementById('ropaImportStatus'); st.style.color='var(--muted)'; st.textContent='Leyendo planilla…';
   try{
     const wb = XLSX.read(await file.arrayBuffer(), {type:'array'});
-    const ws = wb.Sheets[wb.SheetNames.find(n=>/SOLICITUD/i.test(n))] || wb.Sheets[wb.SheetNames[0]];
+    const ws = wb.Sheets[wb.SheetNames.find(n=>/SOLICITUD|TALLE|ROPA/i.test(n))] || wb.Sheets[wb.SheetNames[0]];
     const aoa = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:''});
-    const hdr = (aoa[0]||[]).map(x=>String(x).toUpperCase());
-    const col = re => hdr.findIndex(h=>re.test(h));
-    const ix = { nombre:col(/APELLIDO/), camisa:col(/CAMISA/), remera:col(/REMERA/), pantalon:col(/^PANTAL[ÓO]N TALLES/), nautico:col(/N[ÁA]UTICO/), zapatos:col(/ZAPATO/), aclar:col(/ACLARACI/) };
-    if(ix.nombre<0 || ix.remera<0) throw new Error('No reconozco las columnas (APELLIDO Y NOMBRE, Camisas, Remera, Pantalón, Pantalón náutico, Zapatos).');
-    if(ix.pantalon<0) ix.pantalon = col(/PANTAL[ÓO]N/);
-    let guardapolvo = '';
-    const wsPed = wb.Sheets[wb.SheetNames.find(n=>/PEDIDO/i.test(n))];
-    if(wsPed){ const a2 = XLSX.utils.sheet_to_json(wsPed,{header:1,raw:true,defval:''}); const f = a2.find(r=>/GUARDAPOLVO/i.test(String(r[0]))); if(f) guardapolvo = normTalle(f[1]); }
+    const esNombre = h => /(APELLIDO|NOMBRE|EMPLEADO|PERSONA|COLABORADOR|OPERARIO)/.test(normTxt(h));
+    const hIdx = aoa.slice(0,20).findIndex(r=>r.some(esNombre));
+    if(hIdx<0) throw new Error('No encuentro la columna con el nombre de la persona (tiene que decir "Nombre", "Apellido y nombre" o similar).');
+    const hdr = aoa[hIdx].map(x=>String(x==null?'':x));
+    const cN = hdr.findIndex(esNombre);
+    const cL = hdr.findIndex(h=>/^(LEGAJO|LEG\b|NRO\.? ?LEG|N° ?LEG)/.test(normTxt(h)));
+    const cA = hdr.findIndex(h=>/(ACLARACI|OBSERVAC)/.test(normTxt(h)));
+    const cTipo = hdr.findIndex((h,i)=>i!==cN && /(TIPO|PRENDA|ROPA|ARTICULO|INDUMENTARIA|PRODUCTO)/.test(normTxt(h)));
+    const cTalle = hdr.findIndex((h,i)=>i!==cN && i!==cTipo && /^(TALLE|TALLA|SIZE)$/.test(normTxt(h)));
+    const filas = aoa.slice(hIdx+1).filter(r=>String(r[cN]||'').trim() && !/^TOTAL/.test(normTxt(r[cN])));
+    const formato = (cTipo>=0 && cTalle>=0) ? 'lista' : 'columnas';
+    // qué "fuentes" hay que mapear a un talle del panel: columnas (formato columnas) o tipos de ropa (formato lista)
+    let fuentes;
+    if(formato==='lista') fuentes = [...new Set(filas.map(r=>String(r[cTipo]).trim()).filter(Boolean))].map(t=>({etq:t, clave:claveTalleDeTexto(t)}));
+    else fuentes = hdr.map((h,i)=>({i, etq:h.trim(), clave:claveTalleDeTexto(h)})).filter(f=>f.etq && ![cN,cL,cA].includes(f.i) && !/^(SECTOR|EMPRESA|GERENCIA|TURNO|CUIL|DNI|FECHA|FIRMA|MODALIDAD|CATEGORIA)/.test(normTxt(f.etq)));
+    // personas
     const activos = PERSONAL.filter(p=>!p.baja);
-    const cambios = new Map(); const sinCoincidencia = [];
-    for(let i=1;i<aoa.length;i++){
-      const r = aoa[i], nombre = String(r[ix.nombre]||'').trim(); if(!nombre) continue;
-      // el nombre más corto tiene que estar completo dentro del otro (evita cruzar a dos personas que solo comparten apellido y un nombre)
-      const tk = normTokens(nombre); let best=null, bs=0;
-      for(const p of activos){ const en = normTokens(p.nombre); let sc=0; for(const t of tk) if(en.has(t)) sc++; if(sc>=2 && sc===Math.min(tk.size,en.size) && sc>bs){ bs=sc; best=p; } }
-      if(!best){ sinCoincidencia.push(nombre); continue; }
-      if(cambios.has(best.id)){ sinCoincidencia.push(nombre+' (repetido)'); continue; }
-      const talles = { camisa:normTalle(r[ix.camisa]), remera:normTalle(r[ix.remera]), pantalon:normTalle(r[ix.pantalon]), nautico:normTalle(r[ix.nautico]), zapatos:normTalle(r[ix.zapatos]) };
-      const aclar = String(ix.aclar>=0 ? r[ix.aclar] : '').trim();
-      const m = /^\s*SOLO\s+(\S+)/i.exec(aclar); let solo = [];
-      if(m){ const w = m[1].toUpperCase(); const it = ropaCatalogoActual().find(i=>i.id.toUpperCase()===w || i.nombre.toUpperCase().startsWith(w)); if(it){ solo=[it.id]; if(it.talle==='guardapolvo' && guardapolvo) talles.guardapolvo = guardapolvo; } }
-      cambios.set(best.id, { talles, aclar, solo });
-    }
-    if(!cambios.size) throw new Error('No encontré personas que coincidan con el listado activo.');
-    if(!confirm(`Se van a cargar los talles de ${cambios.size} persona(s).${sinCoincidencia.length?`\n${sinCoincidencia.length} nombre(s) de la planilla no están en el personal activo (bajas o no cargados) y se saltean.`:''}\nLos talles que ya tenían cargados se reemplazan por los de la planilla. ¿Confirmás?`)){ st.textContent='Importación cancelada.'; return; }
-    const ok = await mutarPersonal(rows=>{
-      rows.forEach(p=>{ const c = cambios.get(p.id); if(!c) return;
-        p.talles = { ...(p.talles||{}), ...c.talles }; if(c.aclar) p.aclaracionRopa = c.aclar; if(c.solo.length) p.soloItems = c.solo; p.mod = quienModifico(); });
+    const porPersona = new Map(), sinCoincidencia = [];
+    filas.forEach(r=>{
+      const nombre = String(r[cN]).trim(), p = buscarPersona(nombre, cL>=0 ? r[cL] : '', activos);
+      if(!p){ if(!sinCoincidencia.includes(nombre)) sinCoincidencia.push(nombre); return; }
+      const x = porPersona.get(p.id) || {p, nombres:new Set(), valores:{}, aclar:''};
+      x.nombres.add(nombre);
+      if(formato==='lista'){ const t = String(r[cTipo]).trim(); if(t) x.valores[t] = r[cTalle]; }
+      else fuentes.forEach(f=>{ x.valores[f.etq] = r[f.i]; });
+      if(cA>=0 && String(r[cA]).trim()) x.aclar = String(r[cA]).trim();
+      porPersona.set(p.id, x);
     });
-    if(!ok){ st.style.color='var(--danger)'; st.textContent='No se pudo guardar.'; return; }
-    registrarCambio('Entrega de ropa', 'Talles importados desde Excel', `${file.name}: ${cambios.size} persona(s)${sinCoincidencia.length?`, ${sinCoincidencia.length} sin coincidencia`:''}`);
-    st.style.color='var(--good)'; st.textContent = `Listo ✓ talles de ${cambios.size} persona(s).${sinCoincidencia.length?` Sin coincidencia: ${sinCoincidencia.slice(0,4).join(', ')}${sinCoincidencia.length>4?'…':''}`:''}`;
-    renderRopa();
+    if(!porPersona.size) throw new Error('No encontré personas que coincidan con el personal activo.');
+    _talImp = {file:file.name, formato, fuentes, porPersona, sinCoincidencia, guardapolvo:''};
+    const wsPed = wb.Sheets[wb.SheetNames.find(n=>/PEDIDO/i.test(n))];
+    if(wsPed){ const a2 = XLSX.utils.sheet_to_json(wsPed,{header:1,raw:true,defval:''}); const f = a2.find(r=>/GUARDAPOLVO/i.test(String(r[0]))); if(f) _talImp.guardapolvo = normTalle(f[1]); }
+    const campos = tallesCampos();
+    const opts = sel => '<option value="">(no importar)</option>' + campos.map(c=>`<option value="${escHtml(c.k)}" ${c.k===sel?'selected':''}>${escHtml(c.t)}</option>`).join('');
+    document.getElementById('talImpMapa').innerHTML = `<thead><tr><th>${formato==='lista'?'Tipo de ropa en la planilla':'Columna de la planilla'}</th><th>Talle del panel</th></tr></thead><tbody>` +
+      fuentes.map((f,i)=>`<tr><td><b>${escHtml(f.etq)}</b></td><td><select data-talmap="${i}">${opts(f.clave)}</select></td></tr>`).join('') + '</tbody>';
+    document.getElementById('talImpResumen').textContent = `${file.name} · formato ${formato==='lista'?'una fila por prenda (nombre · tipo de ropa · talle)':'una fila por persona'} · ${filas.length} fila(s)`;
+    document.getElementById('talImpPersonas').innerHTML = `<b style="color:var(--good)">${porPersona.size} persona(s) encontradas</b>${cL>=0?' (por legajo y nombre)':' (por nombre)'}.` +
+      (sinCoincidencia.length ? `<br><b style="color:var(--amber)">${sinCoincidencia.length} sin coincidencia</b> en el personal activo (se saltean): ${escHtml(sinCoincidencia.join(', '))}` : '');
+    document.getElementById('overlayRopaTalles').classList.add('open');
+    st.textContent = '';
   }catch(e){ st.style.color='var(--danger)'; st.textContent = 'No se pudo importar: '+e.message; }
+}
+async function confirmarImportTalles(){
+  const I = _talImp; if(!I) return;
+  const mapa = {}; document.querySelectorAll('#talImpMapa [data-talmap]').forEach(sel=>{ if(sel.value) mapa[I.fuentes[+sel.dataset.talmap].etq] = sel.value; });
+  if(!Object.keys(mapa).length){ alert('No asignaste ningún talle.'); return; }
+  const cat = ropaCatalogoActual(), naut = cat.find(i=>/NAUTIC/.test(normTxt(i.nombre)));
+  const cambios = new Map(); let nTalles = 0;
+  I.porPersona.forEach((x,id)=>{
+    const talles = {};
+    Object.entries(x.valores).forEach(([etq,v])=>{
+      let k = mapa[etq]; const t = normTalle(v); if(!k || !t) return;
+      // pantalón en letras para un sector que usa náutico (ej. Pintura) → va al talle de náutico
+      if(k==='pantalon' && naut && isNaN(parseFloat(t)) && (naut.sectores||[]).includes(x.p.sector)) k = naut.talle;
+      talles[k] = t; nTalles++;
+    });
+    let solo = [];
+    const m = /^\s*SOLO\s+(\S+)/i.exec(x.aclar||'');
+    if(m){ const w = m[1].toUpperCase(); const it = cat.find(i=>i.id.toUpperCase()===w || i.nombre.toUpperCase().startsWith(w)); if(it){ solo=[it.id]; if(it.talle==='guardapolvo' && I.guardapolvo) talles.guardapolvo = I.guardapolvo; } }
+    if(Object.keys(talles).length || x.aclar) cambios.set(id, {talles, aclar:x.aclar, solo});
+  });
+  const ok = await mutarPersonal(rows=>{
+    rows.forEach(p=>{ const c = cambios.get(p.id); if(!c) return;
+      p.talles = { ...(p.talles||{}), ...c.talles }; if(c.aclar) p.aclaracionRopa = c.aclar; if(c.solo.length) p.soloItems = c.solo; p.mod = quienModifico(); });
+  });
+  const st = document.getElementById('ropaImportStatus');
+  if(!ok){ st.style.color='var(--danger)'; st.textContent='No se pudo guardar.'; return; }
+  registrarCambio('Entrega de ropa', 'Talles importados desde Excel', `${I.file}: ${cambios.size} persona(s), ${nTalles} talle(s)${I.sinCoincidencia.length?`, ${I.sinCoincidencia.length} sin coincidencia`:''}`);
+  document.getElementById('overlayRopaTalles').classList.remove('open'); _talImp = null;
+  st.style.color='var(--good)'; st.textContent = `Listo ✓ ${nTalles} talle(s) de ${cambios.size} persona(s).${I.sinCoincidencia.length?` Sin coincidencia: ${I.sinCoincidencia.slice(0,6).join(', ')}${I.sinCoincidencia.length>6?'…':''}`:''}`;
+  renderRopa();
+}
+function descargarPlantillaTalles(){
+  const aoa = [['Legajo','Nombre y apellido','Tipo de ropa','Talle']];
+  const campos = tallesCampos();
+  ropaPersonas().forEach(p=>campos.forEach(c=>{ const v = (p.talles||{})[c.k]; if(v) aoa.push([p.legajo==null?'':p.legajo, p.nombre, c.t, v]); }));
+  if(aoa.length===1) aoa.push(['', 'APELLIDO NOMBRE', campos[0] ? campos[0].t : 'Remera', 'M']);
+  const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = [{wch:8},{wch:34},{wch:22},{wch:8}];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Talles');
+  XLSX.writeFile(wb, `Talles_ropa_${hoyISO()}.xlsx`);
 }
 
 // ---- arranque ----
@@ -6509,6 +6601,9 @@ async function initRopa(){
     });
     $('btnRopaImportar').addEventListener('click', ()=>$('ropaFile').click());
     $('ropaFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(f) importarTalles(f); e.target.value=''; });
+    $('btnRopaPlantillaTalles').addEventListener('click', descargarPlantillaTalles);
+    $('talImpConfirmar').addEventListener('click', confirmarImportTalles);
+    $('talImpCancelar').addEventListener('click', ()=>{ $('overlayRopaTalles').classList.remove('open'); _talImp = null; });
     $('btnRopaCampanias').addEventListener('click', abrirCampanias);
     $('btnCampNueva').addEventListener('click', ()=>{ const tr = document.createElement('tbody'); tr.innerHTML = `<tr data-cid="c-${Date.now().toString(36)}"><td><input class="c-nombre" value="Nueva campaña"></td><td><select class="c-est"><option value="invierno">Invierno</option><option value="verano">Verano</option></select></td><td><input class="c-desde" type="date"></td><td><input class="c-hasta" type="date"></td><td><button class="btn danger small" data-cdel="x">Quitar</button></td></tr>`; $('campFilas').appendChild(tr.firstChild); });
     $('campFilas').addEventListener('click', e=>{ const b = e.target.closest('[data-cdel]'); if(b && confirm('¿Quitar esta campaña? Se borran también sus entregas registradas.')) b.closest('tr').remove(); });
