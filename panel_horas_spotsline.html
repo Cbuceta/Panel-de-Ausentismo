@@ -560,6 +560,15 @@
   .feriado-chip button{background:none; border:none; color:var(--muted); cursor:pointer; font-size:13px; line-height:1; padding:0 2px;}
   .feriado-chip button:hover{color:var(--danger);}
   .warn-badge{color:var(--danger); font-size:11px; margin-left:6px;}
+  .vac-est{display:inline-block; font-size:11px; font-weight:650; padding:1px 8px; border-radius:20px; white-space:nowrap; cursor:help;}
+  .vac-est.ok{background:var(--good-dim); color:var(--good);}
+  .vac-est.excep{background:var(--amber-dim); color:var(--amber);}
+  .vac-est.falta{background:rgba(226,92,92,.15); color:var(--danger);}
+  .vac-est.sinreg{background:var(--panel-2); color:var(--muted);}
+  .vac-nom-excep{color:var(--amber); font-weight:650; cursor:help; border-bottom:1px dotted var(--amber);}
+  .vac-nom-falta{color:var(--danger); font-weight:650; cursor:help; border-bottom:1px dotted var(--danger);}
+  #tab-vacaciones .bar.excep{background:var(--amber); color:#14181d;}
+  #tab-vacaciones .bar.falta{outline:2px dashed var(--danger); outline-offset:-1px;}
   .cal-legend{display:flex; gap:16px; align-items:center; font-size:12px; color:var(--muted); margin-bottom:14px; flex-wrap:wrap;}
   .legend-swatch{display:inline-block; width:12px; height:12px; border-radius:2px; margin-right:5px; vertical-align:middle;}
   .cal-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:8px;}
@@ -1033,9 +1042,12 @@
 
   <section id="tab-vacaciones" class="tabpanel" style="display:none">
     <div class="panel-head">
-      <div>
+      <div style="display:flex; align-items:center; gap:14px;">
+        <img id="vacLogo" alt="SPOTSLINE" style="height:44px; background:#fff; border-radius:8px; padding:4px 8px;">
+        <div>
         <h2>Planificador de vacaciones</h2>
-        <div class="note">Período 01/10/2026 → 30/04/2027 · carga y seguimiento por RRHH. Las vacaciones empiezan un lunes hábil.</div>
+        <div class="note">Período 01/10/2026 → 30/04/2027 · carga y seguimiento por RRHH. Las vacaciones empiezan un lunes hábil y las autoriza el jefe.</div>
+        </div>
       </div>
       <div class="actions">
         <span id="vacImportStatus" style="font-size:11px; color:var(--muted); font-family:var(--mono);"></span>
@@ -1072,14 +1084,15 @@
           <div class="field"><label>Empleado</label><select id="vacSelEmpleado"></select></div>
           <div id="vacEmpMeta" class="emp-meta" style="display:none"></div>
           <div class="row2">
-            <div class="field"><label>Desde</label><input type="date" id="vacDesde" min="2026-10-01" max="2027-04-30"></div>
-            <div class="field"><label>Hasta</label><input type="date" id="vacHasta" min="2026-10-01" max="2027-04-30"></div>
+            <div class="field"><label>Desde</label><input type="date" id="vacDesde"></div>
+            <div class="field"><label>Hasta</label><input type="date" id="vacHasta"></div>
           </div>
           <div id="vacFechaWarning" class="fecha-warning" style="display:none"></div>
           <div class="row2">
             <div class="field"><label>Días (calculado, editable)</label><input type="number" id="vacDias" min="1" step="1"></div>
             <div class="field"><label>Observación (opcional)</label><input type="text" id="vacObs" placeholder="ej: primera tanda"></div>
           </div>
+          <div class="field"><label>Autorizado por (jefe)</label><input type="text" id="vacJefe" placeholder="Nombre del jefe que autoriza · dejalo vacío si todavía no autorizó"></div>
           <button class="btn" id="vacBtnAgregar">Agregar solicitud</button>
           <div id="vacFormMsg" style="margin-top:10px; font-size:12.5px;"></div>
           <details class="feriados-box">
@@ -4950,7 +4963,7 @@ const Vac = (function(){
       const v = p.vac || null;
       return { id:p.id, legajo:p.legajo, nombre:p.nombre, sector:p.sector, gerencia:p.gerencia||'', modalidad:p.modalidad,
                empresa:empresaCorta(p.empresa), cuil: puede('datosVer') ? fmtCuil(datosEfectivos(p).cuil) : '',
-               diasPendientes: v ? Number(v.pend)||0 : (Number(p.diasVac)||0), sinHistorial: v ? !!v.sinHist : true };
+               diasPendientes: v ? Number(v.pend)||0 : (Number(p.diasVac)||0), sinHistorial: v ? !!v.sinHist : true, ingreso: p.ingreso||'' };
     });
   }
   const empById = id => empleados().find(e=>e.id===id);
@@ -4958,6 +4971,66 @@ const Vac = (function(){
   function solicitudesVisibles(){ const ids = new Set(empleados().map(e=>e.id)); return solicitudes.filter(s=>ids.has(s.pid)); }
   const asignadoDe = pid => solicitudes.filter(s=>s.pid===pid).reduce((a,s)=>a+Number(s.dias||0),0);
   const empresaChip = e => `<span class="tipo-chip ${e==='SPL'?'spl':'spotsline'}">${e}</span>`;
+
+  // ---- validaciones según período (LCT art. 150/151/154) ----
+  // días que corresponden por antigüedad al 31/12 del año en que empieza el período
+  function diasLegales(ingreso){
+    if(!ingreso) return null;
+    const ing = parseISO(ingreso), ref = new Date(PERIOD_START.getFullYear(), 11, 31);
+    if(ing > ref) return {dias:0, anios:0, menos6:true};
+    let a = ref.getFullYear() - ing.getFullYear(); if(ref.getMonth() < ing.getMonth() || (ref.getMonth()===ing.getMonth() && ref.getDate() < ing.getDate())) a--;
+    const menos6 = (ref - ing) < 182*86400000;
+    return {anios:a, menos6, dias: a<5 ? 14 : a<10 ? 21 : a<20 ? 28 : 35};
+  }
+  const maxSimultaneo = () => { const el = $('vacThreshold'); const n = Number(el && el.value); return isNaN(n) ? 1 : n; };
+  const seCruzan = (a,b) => a.desde <= b.hasta && b.desde <= a.hasta;
+  // s puede ser una solicitud guardada o una nueva (sin id todavía); lista = solicitudes contra las que comparar
+  function alertasDe(s, lista){
+    lista = lista || solicitudes;
+    const e = empById(s.pid), out = [];
+    if(!e) return out;
+    const a = parseISO(s.desde), b = parseISO(s.hasta);
+    if(a < PERIOD_START || b > PERIOD_END) out.push(`Fuera del período legal (01/10/2026 al 30/04/2027)`);
+    if(!validateStartDate(s.desde)) out.push('No inicia un lunes hábil');
+    const propias = lista.filter(x=>x.pid===s.pid && x.id!==s.id);
+    const total = propias.reduce((t,x)=>t+Number(x.dias||0),0) + Number(s.dias||0);
+    if(total > e.diasPendientes) out.push(`Con esta solicitud suma ${total} días y tiene ${e.diasPendientes} pendientes`);
+    const L = diasLegales(e.ingreso);
+    if(L && L.menos6) out.push('Tiene menos de 6 meses de antigüedad: le corresponde 1 día cada 20 trabajados');
+    else if(L && total > L.dias) out.push(`Supera los ${L.dias} días que le corresponden por antigüedad (${L.anios} años): usa días de períodos anteriores`);
+    if(propias.some(x=>seCruzan(x,s))) out.push('Se superpone con otra solicitud de la misma persona');
+    const mismos = empleados().filter(x=>x.sector===e.sector && x.id!==e.id).map(x=>x.id);
+    const cruzan = [...new Set(lista.filter(x=>mismos.includes(x.pid) && x.id!==s.id && seCruzan(x,s)).map(x=>x.pid))];
+    if(cruzan.length+1 > maxSimultaneo()) out.push(`Coincide con ${cruzan.length} persona(s) de ${e.sector}: ${cruzan.map(id=>(empById(id)||{}).nombre||id).slice(0,4).join(', ')}${cruzan.length>4?'…':''}`);
+    return out;
+  }
+  // estado: ok (autorizada sin problemas) · excep (autorizada con observaciones) · falta (sin autorizar) · sinreg (cargada antes de pedir autorización)
+  function estadoSol(s){
+    const al = alertasDe(s), aut = s.autorizo;
+    if(!('autorizo' in s)) return {k: al.length?'falta':'sinreg', al, txt: al.length?'⚠ Revisar':'Sin registro', tip: al.length ? 'Cargada antes de pedir autorización. Revisar: '+al.join(' · ') : 'Cargada antes de que el panel pidiera autorización del jefe'};
+    if(!aut) return {k:'falta', al, txt:'Falta autorizar', tip: 'Todavía no la autorizó el jefe' + (al.length ? '. Ojo: '+al.join(' · ') : '')};
+    const quien = `Autorizó ${aut.nombre} el ${fmtDisplay(aut.fecha.slice(0,10))}`;
+    if(al.length) return {k:'excep', al, txt:'Autorizada c/ obs.', tip: `${quien} aunque: ${al.join(' · ')}${aut.obs?' — '+aut.obs:''}`};
+    return {k:'ok', al, txt:'✓ Autorizada', tip: quien};
+  }
+  const chipEstado = s => { const x = estadoSol(s); return `<span class="vac-est ${x.k}" title="${escHtml(x.tip)}">${x.txt}</span>`; };
+  // peor estado de una persona para pintar el nombre
+  function nombreConEstado(e){
+    const est = solicitudes.filter(s=>s.pid===e.id).map(estadoSol);
+    const falta = est.filter(x=>x.k==='falta'), exc = est.filter(x=>x.k==='excep');
+    if(falta.length) return `<span class="vac-nom-falta" title="${escHtml(falta.map(x=>x.tip).join('\n'))}">${escHtml(e.nombre)}</span>`;
+    if(exc.length) return `<span class="vac-nom-excep" title="${escHtml(exc.map(x=>x.tip).join('\n'))}">${escHtml(e.nombre)}</span>`;
+    return escHtml(e.nombre);
+  }
+  function previsualizar(){
+    const pid=$('vacSelEmpleado').value, desde=$('vacDesde').value, hasta=$('vacHasta').value, dias=Number($('vacDias').value)||0;
+    const box = $('vacFechaWarning');
+    if(!pid || !desde || !hasta){ checkFecha(); return; }
+    const al = alertasDe({pid, desde, hasta, dias});
+    if(!al.length){ box.style.display='none'; return; }
+    box.innerHTML = `⚠ <b>Antes de cargar, revisá:</b><ul style="margin:4px 0 4px 18px;">${al.map(x=>`<li>${escHtml(x)}</li>`).join('')}</ul>Se puede cargar igual si el jefe lo autoriza: queda registrado con la observación.`;
+    box.style.display='block';
+  }
 
   // ---- almacenamiento compartido ----
   async function cargar(){
@@ -4993,14 +5066,17 @@ const Vac = (function(){
     const conCarga = new Set(sols.map(s=>s.pid)).size;
     const total = sols.reduce((a,s)=>a+Number(s.dias||0),0);
     const excedidos = emps.filter(e=>asignadoDe(e.id) > e.diasPendientes).length;
-    const alerta = sols.filter(s=>s.alertaFecha).length;
+    const ests = sols.map(estadoSol);
+    const alerta = ests.filter(x=>x.al.length).length, faltaAut = sols.filter(s=>('autorizo' in s) && !s.autorizo).length, conObs = ests.filter(x=>x.k==='excep').length;
     const k = [
       {num:emps.length, lbl:'Personal activo', cls:''},
       {num:conCarga, lbl:'Con solicitud cargada', cls:''},
       {num:emps.length-conCarga, lbl:'Sin cargar todavía', cls:(emps.length-conCarga)>0?'warn':'ok'},
       {num:total, lbl:'Días asignados (período)', cls:''},
       {num:excedidos, lbl:'Con más días asignados que pendientes', cls:excedidos>0?'warn':'ok'},
-      {num:alerta, lbl:'Con alerta: no inicia lunes hábil', cls:alerta>0?'warn':'ok'},
+      {num:faltaAut, lbl:'Falta autorización del jefe', cls:faltaAut>0?'warn':'ok'},
+      {num:alerta, lbl:'Con observaciones (período, días, lunes, sector)', cls:alerta>0?'warn':'ok'},
+      {num:conObs, lbl:'Autorizadas con observaciones', cls:''},
     ];
     $('vacKpis').innerHTML = k.map(x=>`<div class="kpi ${x.cls}"><div class="num">${x.num}</div><div class="lbl">${x.lbl}</div></div>`).join('');
   }
@@ -5060,10 +5136,10 @@ const Vac = (function(){
     if(!id){ wrap.innerHTML = '<div class="empty">Elegí un empleado para ver sus solicitudes.</div>'; return; }
     const items = solicitudes.filter(s=>s.pid===id).sort((a,b)=>a.desde.localeCompare(b.desde));
     if(!items.length){ wrap.innerHTML = '<div class="empty">Todavía no tiene solicitudes cargadas.</div>'; return; }
-    wrap.innerHTML = `<table><thead><tr><th>Desde</th><th>Hasta</th><th>Días</th><th>Obs.</th><th></th></tr></thead><tbody>` +
-      items.map(it=>`<tr><td class="mono">${fmtDisplay(it.desde)}${it.alertaFecha?'<span class="warn-badge" title="No inicia un lunes hábil">⚠</span>':''}</td>
-        <td class="mono">${fmtDisplay(it.hasta)}</td><td class="mono">${it.dias}</td><td>${escHtml(it.obs||'')}</td>
-        <td>${canEdit()?`<button class="btn danger small" data-vacdel="${it.id}">Eliminar</button>`:''}</td></tr>`).join('') + `</tbody></table>`;
+    wrap.innerHTML = `<table><thead><tr><th>Desde</th><th>Hasta</th><th>Días</th><th>Autorización</th><th>Obs.</th><th></th></tr></thead><tbody>` +
+      items.map(it=>{ const x = estadoSol(it); return `<tr><td class="mono">${fmtDisplay(it.desde)}${x.al.length?`<span class="warn-badge" title="${escHtml(x.al.join(' · '))}">⚠</span>`:''}</td>
+        <td class="mono">${fmtDisplay(it.hasta)}</td><td class="mono">${it.dias}</td><td>${chipEstado(it)}</td><td>${escHtml(it.obs||'')}</td>
+        <td style="white-space:nowrap">${canEdit()?`${it.autorizo?`<button class="btn secondary small" data-vacdesaut="${it.id}">Quitar autorización</button>`:`<button class="btn small" data-vacaut="${it.id}">Autorizar</button>`} <button class="btn danger small" data-vacdel="${it.id}">Eliminar</button>`:''}</td></tr>`; }).join('') + `</tbody></table>`;
   }
   function recalcDias(){
     const d1=$('vacDesde').value, d2=$('vacHasta').value;
@@ -5077,14 +5153,32 @@ const Vac = (function(){
     if(!desde || !hasta){ msg('Completá las fechas desde/hasta.', true); return; }
     const a=parseISO(desde), b=parseISO(hasta);
     if(b<a){ msg('La fecha "hasta" no puede ser anterior a "desde".', true); return; }
-    if(a<PERIOD_START || b>PERIOD_END){ msg('Las fechas deben estar dentro del período 01/10/2026 – 30/04/2027.', true); return; }
     if(!dias || dias<=0){ msg('Los días deben ser un número mayor a 0.', true); return; }
     const alertaFecha = !validateStartDate(desde);
-    const ok = await mutar(d=>{ d.solicitudes.push({ id:uid(), pid, desde, hasta, dias, obs, alertaFecha }); });
+    const jefe = $('vacJefe').value.trim();
+    const al = alertasDe({pid, desde, hasta, dias});
+    if(al.length && jefe && !confirm(`Esta solicitud tiene observaciones:\n\n• ${al.join('\n• ')}\n\n¿${jefe} la autorizó igual? Queda registrado con la observación.`)) return;
+    const autorizo = jefe ? { nombre:jefe, fecha:new Date().toISOString(), por:ACCESO.usuario.nombre, alertas:al } : null;
+    const ok = await mutar(d=>{ d.solicitudes.push({ id:uid(), pid, desde, hasta, dias, obs, alertaFecha, autorizo }); });
     if(!ok) return;
-    registrarCambio('Vacaciones', 'Solicitud cargada', `${(empById(pid)||{}).nombre||pid} · ${fmtDisplay(desde)} a ${fmtDisplay(hasta)} (${dias} días)${alertaFecha?' · ⚠ no inicia en lunes hábil':''}${obs?' · '+obs:''}`);
-    msg(alertaFecha ? 'Solicitud agregada, con alerta: no empieza un lunes hábil según los feriados cargados.' : 'Solicitud agregada.', alertaFecha);
-    $('vacObs').value=''; render();
+    registrarCambio('Vacaciones', 'Solicitud cargada', `${(empById(pid)||{}).nombre||pid} · ${fmtDisplay(desde)} a ${fmtDisplay(hasta)} (${dias} días)${jefe?' · autorizó '+jefe:' · falta autorización'}${al.length?' · obs: '+al.join(' / '):''}${obs?' · '+obs:''}`);
+    msg(!jefe ? 'Solicitud agregada. Queda pendiente de autorización del jefe.' : (al.length ? `Solicitud agregada y autorizada por ${jefe} con observaciones.` : `Solicitud agregada y autorizada por ${jefe}.`), !jefe || al.length>0);
+    $('vacObs').value=''; $('vacJefe').value=''; render();
+  }
+
+  async function autorizar(id){
+    const s0 = solicitudes.find(s=>s.id===id); if(!s0 || !canEdit()) return;
+    const al = alertasDe(s0);
+    const jefe = (prompt(`Autorizar vacaciones de ${(empById(s0.pid)||{}).nombre||''} (${fmtDisplay(s0.desde)} a ${fmtDisplay(s0.hasta)}).${al.length?`\n\nObservaciones:\n• ${al.join('\n• ')}\n`:''}\nNombre del jefe que autoriza:`)||'').trim();
+    if(!jefe) return;
+    const obsJ = al.length ? (prompt('Motivo o comentario del jefe (opcional):')||'').trim() : '';
+    const ok = await mutar(d=>{ const s = d.solicitudes.find(x=>x.id===id); if(s) s.autorizo = { nombre:jefe, fecha:new Date().toISOString(), por:ACCESO.usuario.nombre, alertas:al, obs:obsJ }; });
+    if(ok){ registrarCambio('Vacaciones', 'Solicitud autorizada', `${(empById(s0.pid)||{}).nombre||s0.pid} · ${fmtDisplay(s0.desde)} a ${fmtDisplay(s0.hasta)} · autorizó ${jefe}${al.length?' · obs: '+al.join(' / '):''}${obsJ?' · '+obsJ:''}`); render(); }
+  }
+  async function quitarAutorizacion(id){
+    const s0 = solicitudes.find(s=>s.id===id); if(!s0 || !canEdit() || !confirm('¿Quitar la autorización de esta solicitud?')) return;
+    const ok = await mutar(d=>{ const s = d.solicitudes.find(x=>x.id===id); if(s) s.autorizo = null; });
+    if(ok){ registrarCambio('Vacaciones', 'Autorización quitada', `${(empById(s0.pid)||{}).nombre||s0.pid} · ${fmtDisplay(s0.desde)} a ${fmtDisplay(s0.hasta)}`); render(); }
   }
 
   // ---- pestaña Solicitudes ----
@@ -5105,8 +5199,8 @@ const Vac = (function(){
         const items = solicitudes.filter(s=>s.pid===e.id).sort((a,b)=>a.desde.localeCompare(b.desde));
         const asignado = items.reduce((a,s)=>a+Number(s.dias||0),0), rest = +(e.diasPendientes-asignado).toFixed(1);
         const sc = rest>0 ? 'status-warn' : (rest===0 ? 'status-ok' : 'status-over');
-        const ft = items.length ? items.map(it=>`${fmtDisplay(it.desde)}${it.alertaFecha?'⚠':''}–${fmtDisplay(it.hasta)} (${it.dias}d)`).join(', ') : '<span class="tag">sin cargar</span>';
-        return `<tr><td class="mono">${e.legajo}</td><td>${escHtml(e.nombre)}</td><td>${chipModalidad(e.modalidad)}</td><td>${empresaChip(e.empresa)}</td><td>${escHtml(e.sector)}</td>
+        const ft = items.length ? items.map(it=>`${fmtDisplay(it.desde)}–${fmtDisplay(it.hasta)} (${it.dias}d) ${chipEstado(it)}`).join('<br>') : '<span class="tag">sin cargar</span>';
+        return `<tr><td class="mono">${e.legajo}</td><td>${nombreConEstado(e)}</td><td>${chipModalidad(e.modalidad)}</td><td>${empresaChip(e.empresa)}</td><td>${escHtml(e.sector)}</td>
           <td class="mono">${e.diasPendientes}</td><td class="mono">${asignado}</td><td class="mono ${sc}">${rest}</td><td style="font-size:12px; color:var(--muted); white-space:normal;">${ft}</td></tr>`;
       }).join('') + `</tbody></table>`;
   }
@@ -5137,11 +5231,12 @@ const Vac = (function(){
       html += `<div class="sector-block"><div class="sector-head"><span>${escHtml(sec)} <span style="color:var(--muted); font-weight:400;">(${emps.length})</span></span>
         ${maxOv>threshold?`<span class="warn-chip">⚠ hasta ${maxOv} personas ausentes el mismo día</span>`:''}</div>`;
       emps.forEach(e=>{
-        html += `<div class="emp-row"><div class="emp-label">${escHtml(e.nombre)}</div><div class="track">`;
+        html += `<div class="emp-row"><div class="emp-label">${nombreConEstado(e)}</div><div class="track">`;
         solicitudes.filter(s=>s.pid===e.id).forEach(s=>{
           const si = Math.max(0, idx(parseISO(s.desde))), ei = Math.min(totalDays-1, idx(parseISO(s.hasta)));
           let conflict=false; for(let i=si;i<=ei;i++){ if(dayCount[i]>threshold){ conflict=true; break; } }
-          html += `<div class="bar ${conflict?'conflict':''}" style="left:${si/totalDays*100}%; width:${Math.max((ei-si+1)/totalDays*100,0.6)}%;" title="${fmtDisplay(s.desde)} a ${fmtDisplay(s.hasta)} (${s.dias}d)">${s.dias}d</div>`;
+          const x = estadoSol(s);
+          html += `<div class="bar ${conflict?'conflict':''} ${x.k==='excep'&&!conflict?'excep':''} ${x.k==='falta'?'falta':''}" style="left:${si/totalDays*100}%; width:${Math.max((ei-si+1)/totalDays*100,0.6)}%;" title="${escHtml(`${fmtDisplay(s.desde)} a ${fmtDisplay(s.hasta)} (${s.dias}d) · ${x.tip}`)}">${s.dias}d</div>`;
         });
         html += `</div></div>`;
       });
@@ -5153,8 +5248,9 @@ const Vac = (function(){
   // ---- exportar / importar pendientes ----
   function exportar(){
     const emps = empleados();
-    const sol = [['Legajo','Nombre','Modalidad','Empresa','Sector','CUIL','Desde','Hasta','Dias','Observacion']];
-    emps.forEach(e=>solicitudes.filter(s=>s.pid===e.id).sort((a,b)=>a.desde.localeCompare(b.desde)).forEach(s=>sol.push([e.legajo,e.nombre,e.modalidad,e.empresa,e.sector,e.cuil,s.desde,s.hasta,s.dias,s.obs||''])));
+    const sol = [['Legajo','Nombre','Modalidad','Empresa','Sector','CUIL','Desde','Hasta','Dias','Observacion','Autorizacion','Autorizo','Observaciones de la validacion']];
+    emps.forEach(e=>solicitudes.filter(s=>s.pid===e.id).sort((a,b)=>a.desde.localeCompare(b.desde)).forEach(s=>{ const x = estadoSol(s);
+      sol.push([e.legajo,e.nombre,e.modalidad,e.empresa,e.sector,e.cuil,s.desde,s.hasta,s.dias,s.obs||'',x.txt.replace('✓ ',''),s.autorizo?s.autorizo.nombre:'',x.al.join(' / ')]); }));
     const res = [['Legajo','Nombre','Modalidad','Empresa','Sector','Dias Pendientes','Dias Asignados','Restante']];
     emps.slice().sort((a,b)=>a.modalidad.localeCompare(b.modalidad)||a.sector.localeCompare(b.sector)||a.nombre.localeCompare(b.nombre))
       .forEach(e=>{ const as = asignadoDe(e.id); res.push([e.legajo,e.nombre,e.modalidad,e.empresa,e.sector,e.diasPendientes,as,+(e.diasPendientes-as).toFixed(1)]); });
@@ -5249,6 +5345,12 @@ const Vac = (function(){
       const b = e.target.closest('[data-rmfer]'); if(!b || !canEdit()) return;
       if(await mutar(d=>{ d.feriados = d.feriados.filter(f=>f!==b.dataset.rmfer); })) registrarCambio('Vacaciones', 'Feriado quitado', fmtDisplay(b.dataset.rmfer)); renderFeriados(); checkFecha();
     });
+    ['vacSelEmpleado','vacDesde','vacHasta','vacDias'].forEach(id=>$(id).addEventListener('change', ()=>setTimeout(previsualizar,0)));
+    $('vacMiniList').addEventListener('click', e=>{
+      const a = e.target.closest('[data-vacaut]'); if(a){ autorizar(a.dataset.vacaut); return; }
+      const q = e.target.closest('[data-vacdesaut]'); if(q){ quitarAutorizacion(q.dataset.vacdesaut); }
+    });
+    try{ $('vacLogo').src = 'data:image/png;base64,' + LOGO_B64; }catch(err){}
     $('vacMiniList').addEventListener('click', async e=>{
       const b = e.target.closest('[data-vacdel]'); if(!b || !canEdit()) return;
       const s0 = solicitudes.find(s=>s.id===b.dataset.vacdel);
